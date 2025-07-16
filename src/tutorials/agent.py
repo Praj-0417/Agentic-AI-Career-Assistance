@@ -43,7 +43,8 @@ def get_tutorials_agent():
     When you have gathered enough information, you MUST use the format:
     ```
     Thought: Do I need to use a tool? No
-    Final Answer: [Your complete, well-formatted markdown guide here]
+    Final Answer: 
+    [Your complete, well-formatted tutorial here - do NOT include triple backticks around your answer]
     ```
 
     **User Request:**
@@ -62,7 +63,8 @@ def get_tutorials_agent():
        - Best practices and common pitfalls
     4. **Practical Application:** Include exercises or project ideas for practice.
     5. **Resources:** Recommend books, courses, or other learning materials.
-    6. **Format:** The entire final answer must be a single, clean, well-organized Markdown block.
+    6. **Format:** Your answer must be a well-organized document with proper markdown headers (# for titles, ## for sections).
+    7. **IMPORTANT:** Do NOT wrap your final answer in triple backticks, and make sure your content appears directly after "Final Answer:" without any backticks.
 
     Begin!
 
@@ -100,7 +102,7 @@ def get_tutorials_agent():
             if "Final Answer:" in output:
                 output = output.split("Final Answer:")[1].strip()
             
-            # Make sure the output doesn't start with raw markdown indicators
+            # Remove any markdown block indicators that might be causing the issue
             if output.startswith("```markdown"):
                 output = output.replace("```markdown", "", 1)
                 if output.endswith("```"):
@@ -112,6 +114,24 @@ def get_tutorials_agent():
             
             # Remove any triple backticks at the beginning or end
             output = output.strip("```").strip()
+            
+            # Special case: if output is empty but we have a full result output, use that instead
+            if not output.strip() and result.get("output", "").strip():
+                # Try to extract content between thought and final answer
+                raw_output = result.get("output", "")
+                
+                # Extract all content between thoughts
+                import re
+                matches = re.findall(r'Thought:.*?(?=Thought:|$)', raw_output, re.DOTALL)
+                if matches:
+                    # Use the last thought block which should have the content
+                    last_match = matches[-1].strip()
+                    # Clean up any remaining format markers
+                    output = re.sub(r'Thought:.*?(?=\n)', '', last_match, flags=re.DOTALL).strip()
+                    # Remove Action/Observation blocks
+                    output = re.sub(r'Action:.*?Observation:.*?(?=\n|$)', '', output, flags=re.DOTALL).strip()
+                    # Also remove tool markup
+                    output = output.replace("Final Answer:", "").strip()
             
             # Ensure the output is properly formatted markdown
             # If it looks like plain text without markdown formatting, add basic formatting

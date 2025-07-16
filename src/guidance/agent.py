@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from typing import Any, List, Mapping, Optional
 
@@ -18,15 +19,67 @@ class ChatTogetherNative(LLM):
     """
     Custom LangChain wrapper for the native Together AI API.
     This bypasses the OpenAI-compatible endpoint to avoid its token limits.
+    Includes retry logic for handling temporary API failures.
     """
     model: str = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free"
     together_api_key: str = os.environ.get("TOGETHER_API_KEY")
     temperature: float = 0.7
     max_tokens: int = 5000
+    max_retries: int = 3
+    initial_retry_delay: float = 1.0
 
     @property
     def _llm_type(self) -> str:
         return "together_ai_native"
+
+    def _make_api_call(self, headers: dict, json_data: dict, retry_count: int = 0) -> str:
+        """Make an API call with retry logic and rate limit handling."""
+        try:
+            response = requests.post(
+                "https://api.together.xyz/v1/chat/completions",
+                headers=headers,
+                json=json_data,
+                timeout=30  # Add a timeout
+            )
+            
+            # Handle rate limiting specifically
+            if response.status_code == 429:
+                if retry_count < self.max_retries:
+                    # For rate limits, use longer delays
+                    delay = self.initial_retry_delay * (4 ** retry_count)  # Use 4 instead of 2 for longer delays
+                    print(f"Rate limit hit, waiting {delay:.1f} seconds before retry... (Attempt {retry_count + 1}/{self.max_retries})")
+                    time.sleep(delay)
+                    return self._make_api_call(headers, json_data, retry_count + 1)
+                else:
+                    error_msg = (
+                        "Rate limit exceeded. Please try:\n"
+                        "1. Wait a few minutes before making another request\n"
+                        "2. Check your API usage on together.ai\n"
+                        "3. Consider using a different model from the free tier"
+                    )
+                    print(error_msg)
+                    return error_msg
+            
+            # Handle other errors
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+            
+        except requests.exceptions.RequestException as e:
+            if retry_count < self.max_retries:
+                # Calculate delay with exponential backoff
+                delay = self.initial_retry_delay * (2 ** retry_count)
+                print(f"API call failed, retrying in {delay:.1f} seconds... (Attempt {retry_count + 1}/{self.max_retries})")
+                print(f"Error was: {str(e)}")
+                time.sleep(delay)
+                return self._make_api_call(headers, json_data, retry_count + 1)
+            else:
+                error_msg = f"Error: API request failed after {self.max_retries} retries: {str(e)}"
+                print(error_msg)
+                return error_msg
+        except KeyError as e:
+            error_msg = f"Error: Invalid response format from API: {str(e)}"
+            print(error_msg)
+            return error_msg
 
     def _call(
         self,
@@ -50,16 +103,7 @@ class ChatTogetherNative(LLM):
         if stop is not None:
             json_data["stop"] = stop
 
-        try:
-            response = requests.post(
-                "https://api.together.xyz/v1/chat/completions",
-                headers=headers,
-                json=json_data,
-            )
-            response.raise_for_status() # Raise an exception for bad status codes (4xx or 5xx)
-            return response.json()["choices"][0]["message"]["content"]
-        except requests.exceptions.RequestException as e:
-            return f"Error: API request failed: {e}"
+        return self._make_api_call(headers, json_data)
 
     @property
     def _identifying_params(self) -> Mapping[str, Any]:
@@ -68,6 +112,8 @@ class ChatTogetherNative(LLM):
             "model": self.model,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
+            "max_retries": self.max_retries,
+            "initial_retry_delay": self.initial_retry_delay,
         }
 
 # --- End of Custom Wrapper ---

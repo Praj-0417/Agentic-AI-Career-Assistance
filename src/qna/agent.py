@@ -12,7 +12,7 @@ def get_job_search_agent():
     Initializes and returns the job search agent, now as a ReAct agent.
     """
     llm = ChatTogetherNative(
-        model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free", 
+        model="mistralai/Mixtral-8x7B-Instruct-v0.1", 
         temperature=0.5,
         max_tokens=4096
     )

@@ -236,17 +236,17 @@ LATEX_RESUME_TEMPLATE = r"""
 
 %----------EXPERIENCE-----------------
 % Placeholder for EXPERIENCE
-% Example:
-% \section{{Experience}}
-%   \resumeSubHeadingListStart
-%     \resumeSubheading
-%       {{Software Engineer}}{{June 2020 -- Present}}
-%       {{Tech Company Inc.}}{{San Francisco, CA}}
-%     \resumeItemListStart
-%       \resumeItem{{Developed a new feature that increased user engagement by 15\%}}
-%       \resumeItem{{Reduced server costs by 20\% by optimizing database queries}}
-%     \resumeItemListEnd
-%   \resumeSubHeadingListEnd
+#% Example:
+#% \section{{Experience}}
+#%   \resumeSubHeadingListStart
+#%     \resumeSubheading
+#%       {{Software Engineer}}{{June 2020 -- Present}}
+#%       {{Tech Company Inc.}}{{San Francisco, CA}}
+#%     \resumeItemListStart
+#%       \resumeItem{{Developed a new feature that increased user engagement by 15\%}}
+#%       \resumeItem{{Reduced server costs by 20\% by optimizing database queries}}
+#%     \resumeItemListEnd
+#%   \resumeSubHeadingListEnd
 
 %----------PROJECTS-----------------
 % Placeholder for PROJECTS
@@ -262,64 +262,102 @@ LATEX_RESUME_TEMPLATE = r"""
 %       \resumeItemListEnd
 %     \resumeSubHeadingListEnd
 
-%----------ACHIEVEMENTS-----------------
-% Placeholder for ACHIEVEMENTS
-% Example:
-% \section{{Achievements}}
-%   \resumeItemListStart
-%     \resumeItem{{Winner, University Hackathon 2019}}
-%     \resumeItem{{Published paper on AI ethics at XYZ Conference}}
-% \resumeItemListEnd
+% %----------ACHIEVEMENTS-----------------
+% % Placeholder for ACHIEVEMENTS
+% % Example:
+% % \section{{Achievements}}
+% %   \resumeItemListStart
+% %     \resumeItem{{Winner, University Hackathon 2019}}
+% %     \resumeItem{{Published paper on AI ethics at XYZ Conference}}
+% % \resumeItemListEnd
 
 \end{{document}}
 """
 
 
 def get_resume_builder_agent():
-    print("DEBUG: This is the correct get_resume_builder_agent from resume_builder/agent.py")
     """
-    Initializes the resume builder agent to generate LaTeX code.
+    Initializes an interactive resume builder agent that supports continuous editing.
     """
+    print("DEBUG: Initializing interactive resume builder agent")
+    
     llm = ChatTogetherNative(
-        model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
-        temperature=0.4,
+        model="mistralai/Mixtral-8x7B-Instruct-v0.1",
+        temperature=0.2,
         max_tokens=4096
     )
     
     prompt = PromptTemplate(
-        input_variables=["job_description", "user_details"],
-        template="""
-You are an expert LaTeX resume generator. Your task is to populate the provided LaTeX template with the user's information, tailored to the target job description.
+        input_variables=["job_description", "user_details", "previous_resume", "user_request"],
+        template="""You are an interactive resume editor that helps users build and refine their resumes through conversation.
 
-**CRITICAL INSTRUCTIONS:**
-1.  **Analyze User Details & Job Description:** Extract all relevant information from the user's details (experience, skills, projects, education) and identify keywords from the job description.
-2.  **Populate the Template:** Fill in the sections of the LaTeX template below using the user's information. You MUST use the provided custom commands (`\resumeSubheading`, `\resumeItem`, etc.) as shown in the examples.
-3.  **Tailor the Content:** Emphasize skills and experiences that are most relevant to the job description. Use action verbs and quantify achievements.
-4.  **Output ONLY LaTeX Code:** Your entire response must be ONLY the complete, raw LaTeX code from `\documentclass` to '\end document'. Do not include any other text, explanations, or markdown formatting like '```latex'.
+Current State: {previous_resume}
 
-**User Details:**
-{user_details}
+User's Request: {user_request}
 
-**Target Job Description:**
-{job_description}
+Job Description: {job_description}
 
-**LaTeX Resume Template to Populate:**
-{latex_template}
+User Details: {user_details}
+
+Instructions:
+1. If user says "end resume session", respond with: "END_SESSION: Your resume has been saved!"
+2. Otherwise, help modify the resume based on their request
+3. If no previous resume exists, create a new one using the LaTeX template
+4. After each change, show the complete updated resume and these options:
+
+What would you like to modify next?
+1. Add/update work experience
+2. Modify skills section
+3. Add/edit projects
+4. Update education details
+5. Adjust formatting
+6. Type "end resume session" when you're finished
+
+Remember:
+- Keep all LaTeX formatting intact
+- Preserve existing sections unless asked to change
+- Always respond with the complete resume after changes
+- Make sure projects section includes ScrapSaathi and VeniScope
 """
     )
     
-    # The template is now passed as a variable to the prompt, and input_variables are set explicitly to avoid 'document' key errors
-    partial_prompt = prompt.partial(latex_template=LATEX_RESUME_TEMPLATE)
-    partial_prompt.input_variables = ["job_description", "user_details"]
-    chain = LLMChain(llm=llm, prompt=partial_prompt, output_key="resume")
-    return chain
+    # Create a wrapper to handle missing keys and format the response
+    class ResumeBuilderAgentWrapper:
+        def __init__(self, chain):
+            self.chain = chain
+            
+        def invoke(self, inputs):
+            # Handle missing keys with defaults
+            if "previous_resume" not in inputs:
+                inputs["previous_resume"] = ""
+                
+            if "user_request" not in inputs:
+                inputs["user_request"] = "Create a new LaTeX resume"
+                
+            # Check if resume_user_details was provided instead of user_details
+            if "resume_user_details" in inputs and "user_details" not in inputs:
+                inputs["user_details"] = inputs["resume_user_details"]
+                
+            # Invoke the chain with complete inputs
+            result = self.chain.invoke(inputs)
+            
+            # Format the response as a dict with 'resume' key if it's not already
+            if isinstance(result, dict) and "output" in result:
+                if "END_SESSION" in result["output"]:
+                    return {"output": result["output"], "resume": inputs.get("previous_resume", "")}
+                return {"output": result["output"], "resume": result["output"]}
+            else:
+                return {"output": "Error processing resume", "resume": inputs.get("previous_resume", "")}
+    
+    chain = LLMChain(llm=llm, prompt=prompt, output_key="output")
+    return ResumeBuilderAgentWrapper(chain)
 
 def get_resume_refinement_agent():
     """
     Initializes an agent for refining an existing LaTeX resume.
     """
     llm = ChatTogetherNative(
-        model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
+        model="mistralai/Mixtral-8x7B-Instruct-v0.1",
         temperature=0.3,
         max_tokens=4096
     )
@@ -350,6 +388,27 @@ def get_resume_refinement_agent():
         """
     )
 
-    chain = LLMChain(llm=llm, prompt=prompt, output_key="resume")
+    # Create a wrapper to handle missing keys and format the response
+    class ResumeRefinementAgentWrapper:
+        def __init__(self, chain):
+            self.chain = chain
+            
+        def invoke(self, inputs):
+            # Handle missing keys with defaults
+            if "previous_resume" not in inputs and "generated_resume" in inputs:
+                inputs["previous_resume"] = inputs["generated_resume"]
+                
+            if "user_request" not in inputs and "refinement_request" in inputs:
+                inputs["user_request"] = inputs["refinement_request"]
+            
+            # Invoke the chain with complete inputs
+            result = self.chain.invoke(inputs)
+            
+            # Format the response
+            if isinstance(result, dict) and "output" in result:
+                return {"output": "Changes applied successfully.", "resume": result["output"]}
+            else:
+                return {"output": "Error processing resume changes", "resume": inputs.get("previous_resume", "")}
 
-    return chain
+    chain = LLMChain(llm=llm, prompt=prompt, output_key="output")
+    return ResumeRefinementAgentWrapper(chain)

@@ -2,6 +2,12 @@ import streamlit as st
 import os
 from dotenv import load_dotenv
 from src.orchestrator.agent import OrchestratorAgent
+# Import specialized agents
+from src.guidance.agent import get_qa_bot, get_tutorial_agent
+from src.resume_builder.agent import get_resume_builder_agent, get_resume_refinement_agent
+from src.interview_prep.agent import get_interview_prep_agent
+from src.qna.agent import get_job_search_agent
+from src.tutorials.agent import get_tutorials_agent
 
 # Load environment variables from .env file
 load_dotenv()
@@ -221,64 +227,146 @@ def main():
         # Mode-specific instructions and input fields in the fixed top container
         with input_container:
             if st.session_state.active_mode == "RESUME_BUILDER":
-                st.write("Ask me to create a resume, improve your existing resume, or tailor it to a specific job description.")
+                # Initialize resume-related session state variables
+                if "job_description" not in st.session_state:
+                    st.session_state.job_description = ""
+                if "resume_user_details" not in st.session_state:
+                    st.session_state.resume_user_details = st.session_state.user_profile.get("experience", "") + "\n" + st.session_state.user_profile.get("skills", "")
+                if "generated_resume" not in st.session_state:
+                    st.session_state.generated_resume = st.session_state.user_profile.get("resume_content", "")
                 
-                # Add fields for resume builder
-                col1, col2 = st.columns(2)
+                # For Resume Builder, LaTeX is the only option now
+                if "resume_builder_mode" not in st.session_state:
+                    st.session_state.resume_builder_mode = "LaTeX Resume Builder"
                 
-                with col1:
-                    # Add job description field (required)
-                    if "job_description" not in st.session_state:
-                        st.session_state.job_description = ""
-                    st.session_state.job_description = st.text_area("Job Description (Required)", 
-                                                      st.session_state.job_description,
-                                                      height=100,
-                                                      help="Paste a job description to tailor your resume to this role")
+                # Import the direct resume builder agents
+                from src.resume_builder.agent import get_resume_builder_agent, get_resume_refinement_agent
                 
-                with col2:
-                    # Add user details field (required)
-                    user_details_help = "Enter information about your experience, skills, and background"
+                st.subheader("1. Target Job Description")
+                job_desc_input = st.text_area(
+                    "Paste the job description here:", 
+                    height=150,
+                    key="job_desc_input",
+                    value=st.session_state.job_description
+                )
+                st.session_state.job_description = job_desc_input
+                
+                st.subheader("2. Your Details")
+                user_details = st.text_area(
+                    "Paste your current resume, or list your experience, skills, and projects:", 
+                    height=150, 
+                    key="user_details_input",
+                    value=st.session_state.resume_user_details
+                )
+                st.session_state.resume_user_details = user_details
                     
-                    # Use profile information if available
-                    prefilled_details = ""
-                    if st.session_state.user_profile.get("name"):
-                        prefilled_details += f"Name: {st.session_state.user_profile.get('name')}\n"
-                    if st.session_state.user_profile.get("job_title"):
-                        prefilled_details += f"Target Job Title: {st.session_state.user_profile.get('job_title')}\n"
-                    if st.session_state.user_profile.get("experience"):
-                        prefilled_details += f"Experience: {st.session_state.user_profile.get('experience')}\n"
-                    if st.session_state.user_profile.get("skills"):
-                        prefilled_details += f"Skills: {st.session_state.user_profile.get('skills')}\n"
+                if st.button("Generate LaTeX Resume", key="latex_resume_button"):
+                    if st.session_state.job_description and st.session_state.resume_user_details:
+                        with st.spinner("Generating your tailored LaTeX resume..."):
+                            agent = get_resume_builder_agent()
+                            try:
+                                result = agent.invoke({
+                                    "job_description": st.session_state.job_description, 
+                                    "resume_user_details": st.session_state.resume_user_details
+                                })
+                                
+                                if isinstance(result, dict) and 'resume' in result:
+                                    st.session_state.generated_resume = result['resume']
+                                    # Save to user profile as well
+                                    st.session_state.orchestrator.update_user_profile("resume_content", result['resume'])
+                                    st.session_state.resume_chat_history = [{
+                                        "role": "assistant", 
+                                        "content": "Here is the LaTeX code for your resume. You can now ask for modifications below. For example: 'Add a new project called...'"
+                                    }]
+                                    st.rerun()
+                                else:
+                                    st.error("Sorry, there was an error generating the resume.")
+                                    st.write(f"Error details: {result}")
+                            except Exception as e:
+                                st.error(f"An error occurred: {str(e)}")
+                    else:
+                        st.warning("Please provide both the job description and your details.")
                     
-                    # Initialize the user_details if not already in session state
-                    if "user_details" not in st.session_state:
-                        st.session_state.user_details = prefilled_details
+                # Display the generated resume and refinement interface
+                if "generated_resume" in st.session_state and st.session_state.generated_resume:
+                    st.subheader("3. Your Generated LaTeX Resume")
+                    st.info("Copy the code below and paste it into a LaTeX editor (like Overleaf) to compile your PDF.")
+                    st.code(st.session_state.generated_resume, language="latex")
                     
-                    # Add the text area with prefilled or previously entered content
-                    st.session_state.user_details = st.text_area("Your Details (Required)", 
-                                                    st.session_state.user_details,
-                                                    height=100,
-                                                    help=user_details_help)
-                
-                # Add previous resume content field (optional)
-                if "previous_resume" not in st.session_state:
-                    # If we have a resume in the profile, use it
-                    st.session_state.previous_resume = st.session_state.user_profile.get("resume_content", "")
-                
-                # Only show this if we have a previous resume or if they check a checkbox to show it
-                if "show_previous_resume" not in st.session_state:
-                    st.session_state.show_previous_resume = bool(st.session_state.previous_resume)
-                
-                st.session_state.show_previous_resume = st.checkbox("I want to improve an existing resume", 
-                                                       value=st.session_state.show_previous_resume)
-                
-                if st.session_state.show_previous_resume:
-                    st.session_state.previous_resume = st.text_area("Previous Resume (LaTeX or plain text)", 
-                                                      st.session_state.previous_resume,
-                                                      height=150,
-                                                      help="Paste your existing resume if you want to improve it")
+                    st.subheader("4. Refine Your Resume")
+                    st.write("Need to make changes? Enter your refinement request below.")
+                    
+                    # Direct interface for refinement (no chat)
+                    refinement_request = st.text_area(
+                        "Describe the changes you want to make:",
+                        placeholder="E.g., Add a new project called 'AI Career Assistant', change the summary to focus more on leadership, etc.",
+                        key="refinement_request",
+                        height=100
+                    )
+                    
+                    if st.button("Apply Changes", key="apply_refinement"):
+                        if refinement_request:
+                            with st.spinner("Editing your LaTeX resume..."):
+                                refinement_agent = get_resume_refinement_agent()
+                                try:
+                                    response = refinement_agent.invoke({
+                                        "job_description": st.session_state.job_description,
+                                        "previous_resume": st.session_state.generated_resume,
+                                        "user_request": refinement_request
+                                    })
+                                    
+                                    if isinstance(response, dict) and 'resume' in response:
+                                        # Update the resume and save to user profile
+                                        st.session_state.generated_resume = response['resume']
+                                        st.session_state.orchestrator.update_user_profile("resume_content", response['resume'])
+                                        st.success("✅ Resume updated successfully!")
+                                        st.rerun()
+                                    else:
+                                        st.error(f"Sorry, I couldn't make that change. Please try rephrasing your request. Error: {response}")
+                                except Exception as e:
+                                    st.error(f"An error occurred during refinement: {str(e)}")
+                        else:
+                            st.warning("Please describe the changes you want to make.")
+                    
+                    # Display refinement history
+                    if "resume_refinement_history" not in st.session_state:
+                        st.session_state.resume_refinement_history = []
+                    
+                    if st.session_state.resume_refinement_history:
+                        st.subheader("Refinement History")
+                        if st.button("Clear Refinement History"):
+                            st.session_state.resume_refinement_history = []
+                            st.rerun()
+                        
+                        for i, entry in enumerate(reversed(st.session_state.resume_refinement_history)):
+                            with st.expander(f"**{i+1}. {entry['request']}**", expanded=False):
+                                st.markdown(entry['result'])
+                                if st.button("Delete", key=f"delete_refine_{i}"):
+                                    st.session_state.resume_refinement_history.pop(len(st.session_state.resume_refinement_history) - 1 - i)
+                                    st.rerun()
+                else:
+                    # For conversational mode, show the previous resume field (optional)
+                    if "previous_resume" not in st.session_state:
+                        # If we have a resume in the profile, use it
+                        st.session_state.previous_resume = st.session_state.user_profile.get("resume_content", "")
+                    
+                    # Only show this if we have a previous resume or if they check a checkbox to show it
+                    if "show_previous_resume" not in st.session_state:
+                        st.session_state.show_previous_resume = bool(st.session_state.previous_resume)
+                    
+                    st.session_state.show_previous_resume = st.checkbox("I want to improve an existing resume", 
+                                                           value=st.session_state.show_previous_resume)
+                    
+                    if st.session_state.show_previous_resume:
+                        st.session_state.previous_resume = st.text_area("Previous Resume (LaTeX or plain text)", 
+                                                          st.session_state.previous_resume,
+                                                          height=150,
+                                                          help="Paste your existing resume if you want to improve it")
             elif st.session_state.active_mode == "JOB_SEARCH":
-                st.write("Ask me to find job opportunities, provide application advice, or offer career guidance.")
+                st.write("Find relevant job opportunities based on your profile.")
+                
+                # Import the direct job search agent
+                from src.qna.agent import get_job_search_agent
                 
                 # Add fields for job search
                 col1, col2, col3 = st.columns(3)
@@ -306,13 +394,90 @@ def main():
                     st.session_state.job_type = st.selectbox("Job Type", 
                                                    ["Full-time", "Part-time", "Contract", "Internship"],
                                                    index=0)
+                
+                # Add user context field
+                if "user_context" not in st.session_state:
+                    st.session_state.user_context = st.session_state.user_profile.get("skills", "")
+                
+                st.session_state.user_context = st.text_area(
+                    "To personalize your search, briefly describe your skills, experience, and what you're looking for:",
+                    st.session_state.user_context,
+                    height=100,
+                    help="Enter skills, experience, or other details to personalize your job search"
+                )
+                    
+                if st.button("Search for Jobs", key="direct_job_search"):
+                    if st.session_state.job_title_search and st.session_state.job_location:
+                        with st.spinner("Searching for jobs..."):
+                            agent = get_job_search_agent()
+                            result = agent.invoke({
+                                "job_title": st.session_state.job_title_search,
+                                "location": st.session_state.job_location,
+                                "job_type": st.session_state.job_type,
+                                "user_context": st.session_state.user_context
+                            })
+                            
+                            output = result.get('output', f"Error: Could not find jobs matching your criteria.")
+                            
+                            # Store in history and display
+                            if "job_search_direct_history" not in st.session_state:
+                                st.session_state.job_search_direct_history = []
+                            
+                            st.session_state.job_search_direct_history.append({
+                                "query": f"{st.session_state.job_type} jobs for {st.session_state.job_title_search} in {st.session_state.job_location}",
+                                "result": output
+                            })
+                            
+                            # Display results
+                            st.subheader("Job Search Results")
+                            st.markdown(output)
+                    else:
+                        st.warning("Please provide both a job title and a location.")
+                
+                # Display job search history
+                if "job_search_direct_history" in st.session_state and st.session_state.job_search_direct_history:
+                    st.subheader("Job Search Results")
+                    if st.button("Clear Job Search History"):
+                        st.session_state.job_search_direct_history = []
+                        st.rerun()
+                    
+                    for i, entry in enumerate(reversed(st.session_state.job_search_direct_history)):
+                        with st.expander(f"**{i+1}. {entry['query']}**", expanded=True):
+                            st.markdown(entry['result'])
+                            if st.button("Delete", key=f"delete_job_{i}"):
+                                st.session_state.job_search_direct_history.pop(len(st.session_state.job_search_direct_history) - 1 - i)
+                                st.rerun()
             elif st.session_state.active_mode == "INTERVIEW_PREP":
                 st.write("Ask me for interview preparation, request a mock interview, or get post-interview feedback.")
                 
-                # Initialize interview mode if not exists
+                # Initialize interview-related session state variables
+                if "interview_job_title" not in st.session_state:
+                    st.session_state.interview_job_title = ""
+                if "interview_experience" not in st.session_state:
+                    st.session_state.interview_experience = ""
+                
+                # Create input fields for job title and experience
+                job_title = st.text_input(
+                    "Job Title You're Interviewing For (Required)",
+                    value=st.session_state.interview_job_title,
+                    key="interview_job_title_input",
+                    help="Enter the exact job title you're interviewing for"
+                )
+                st.session_state.interview_job_title = job_title
+                
+                experience = st.text_area(
+                    "Your Relevant Experience",
+                    value=st.session_state.interview_experience,
+                    key="interview_experience_input",
+                    height=100,
+                    help="Enter a brief summary of your experience relevant to this role"
+                )
+                st.session_state.interview_experience = experience
+                
+                # Add interview mode selection if not exists
                 if "interview_mode" not in st.session_state:
                     st.session_state.interview_mode = "prep"
-                    
+                
                 # Add interview mode selection
                 st.session_state.interview_mode = st.radio(
                     "Interview Mode",
@@ -322,29 +487,352 @@ def main():
                           1 if st.session_state.interview_mode == "mock" else 2
                 )
                 
-                # Map the radio selection to the agent mode
                 if st.session_state.interview_mode == "Preparation Guide":
                     st.session_state.interview_agent_mode = "INTERVIEW_PREP"
+                    
+                    # Add a clean, direct interface for the preparation guide matching main.py
+                    st.subheader("Interview Preparation Guide")
+                    st.write("Get ready to ace your next interview with personalized preparation tips.")
+                    
+                    # Import the interview prep agent directly to simplify the flow
+                    from src.interview_prep.agent import get_interview_prep_agent
+                    
+                    # User can enter their specific query here
+                    prep_query = st.text_input(
+                        "What specific interview advice do you need?", 
+                        placeholder="E.g., 'Common questions for this role', 'How to answer behavioral questions', etc.",
+                        key="prep_query"
+                    )
+                    
+                    if st.button("Generate Prep Guide", key="prep_guide_button"):
+                        if st.session_state.interview_job_title:
+                            with st.spinner("Generating your interview prep guide... This may take a moment."):
+                                agent = get_interview_prep_agent()
+                                result = agent.invoke({
+                                    "job_title": st.session_state.interview_job_title,
+                                    "user_experience": st.session_state.interview_experience,
+                                    "user_name": st.session_state.user_profile.get("name", "Candidate"),
+                                    "input": prep_query or f"Comprehensive interview preparation guide for {st.session_state.interview_job_title}"
+                                })
+                                
+                                output = result.get('output', "Sorry, I couldn't generate the interview guide.")
+                                
+                                # Store in history
+                                if "interview_prep_history" not in st.session_state:
+                                    st.session_state.interview_prep_history = []
+                                
+                                st.session_state.interview_prep_history.append({
+                                    "query": f"Prep Guide for {st.session_state.interview_job_title}: {prep_query if prep_query else 'Comprehensive guide'}",
+                                    "result": output
+                                })
+                                
+                                # Display the guide
+                                st.subheader(f"Interview Guide: {st.session_state.interview_job_title}")
+                                st.markdown(output)
+                        else:
+                            st.warning("Please provide the job title you're interviewing for.")
+                    
+                    # Display interview prep history
+                    if "interview_prep_history" in st.session_state and st.session_state.interview_prep_history:
+                        st.subheader("Your Interview Prep Guides")
+                        if st.button("Clear Prep Guide History"):
+                            st.session_state.interview_prep_history = []
+                            st.rerun()
+                        
+                        for i, entry in enumerate(reversed(st.session_state.interview_prep_history)):
+                            with st.expander(f"**{i+1}. {entry['query']}**", expanded=i==0):
+                                st.markdown(entry['result'])
+                                if st.button("Delete", key=f"delete_prep_{i}"):
+                                    st.session_state.interview_prep_history.pop(len(st.session_state.interview_prep_history) - 1 - i)
+                                    st.rerun()
+                
                 elif st.session_state.interview_mode == "Mock Interview":
                     st.session_state.interview_agent_mode = "INTERVIEW_MOCK"
+                    
+                    # Always use direct interview mode - no chat-based interviews
+                    st.session_state.direct_interview_mode = True
+                    
+                    # Import directly to simplify flow
+                    from src.interview_prep.agent import get_interview_prep_agent
+                    
+                    # Initialize direct mock interview session state
+                    if 'mock_interview_history' not in st.session_state:
+                        st.session_state.mock_interview_history = []
+                    if 'mock_interview_started' not in st.session_state:
+                        st.session_state.mock_interview_started = False
+                    if 'interview_evaluation' not in st.session_state:
+                        st.session_state.interview_evaluation = None
+                    
+                    # Check if we have the required interview job title
+                    if not st.session_state.interview_job_title:
+                        st.warning("Please provide a job title at the top of this page before starting a mock interview.")
+                    
+                    # Display the evaluation if we have one
+                    if st.session_state.interview_evaluation:
+                        st.subheader("Your Interview Evaluation")
+                        st.info("This evaluation is based on your performance in the mock interview. Use this feedback to improve your interview skills.")
+                        st.markdown(st.session_state.interview_evaluation)
+                        
+                        if st.button("Clear Evaluation & Start New Interview", key="clear_evaluation"):
+                            st.session_state.interview_evaluation = None
+                            st.session_state.mock_interview_started = False
+                            st.session_state.mock_interview_history = []
+                            st.rerun()
+                    elif not st.session_state.mock_interview_started:
+                        st.info("You are about to start a mock interview. The AI will ask you questions one by one. Answer as you would in a real interview!")
+                        start_mock = st.button("Start Mock Interview", key="start_mock_direct")
+                        
+                        if start_mock:
+                            if not st.session_state.interview_job_title:
+                                st.error("Please provide the job title for your interview at the top of this page.")
+                            else:
+                                st.session_state.mock_interview_history = []
+                                st.session_state.mock_interview_started = True
+                                
+                                # Add system message to start the interview
+                                st.session_state.mock_interview_history.append({
+                                    "role": "system",
+                                    "content": f"You are interviewing {st.session_state.user_profile.get('name', 'a candidate')} for the role of {st.session_state.interview_job_title}. The candidate has this experience: {st.session_state.interview_experience}. Begin the interview with a brief introduction and your first question."
+                                })
+                                
+                                # Get first interviewer message
+                                with st.spinner("Starting the interview..."):
+                                    agent = get_interview_prep_agent(mock=True)
+                                    response = agent.invoke({
+                                        "job_title": st.session_state.interview_job_title,
+                                        "user_experience": st.session_state.interview_experience,
+                                        "user_name": st.session_state.user_profile.get("name", "Candidate"),
+                                        "history": st.session_state.mock_interview_history
+                                    })
+                                    ai_reply = response.get('output', "Hello! I'm your interviewer today. Let's begin with your background. Could you tell me about your experience?")
+                                    st.session_state.mock_interview_history.append({"role": "assistant", "content": ai_reply})
+                                
+                                st.rerun()
+                    else:
+                        # Active mock interview in progress
+                        st.subheader("Active Mock Interview")
+                        
+                        # Display chat history
+                        for message in st.session_state.mock_interview_history:
+                            if message["role"] != "system":  # Skip system messages
+                                with st.chat_message(message["role"]):
+                                    st.markdown(message["content"])
+
+                        # User answers - using a chat input 
+                        interview_answer = st.chat_input("Type your answer and press Enter...")
+                        
+                        if interview_answer:
+                            st.session_state.mock_interview_history.append({"role": "user", "content": interview_answer})
+                            with st.chat_message("user"):
+                                st.markdown(interview_answer)
+                                
+                            with st.spinner("AI interviewer is thinking..."):
+                                agent = get_interview_prep_agent(mock=True)
+                                response = agent.invoke({
+                                    "job_title": st.session_state.interview_job_title,
+                                    "user_experience": st.session_state.interview_experience,
+                                    "user_name": st.session_state.user_profile.get("name", "Candidate"),
+                                    "history": st.session_state.mock_interview_history
+                                })
+                                ai_reply = response.get('output', "I couldn't process that response.")
+                                st.session_state.mock_interview_history.append({"role": "assistant", "content": ai_reply})
+                                st.rerun()
+                        
+                        # Add buttons for managing the interview - match main.py layout
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            if st.button("End Interview", key="end_mock_direct"):
+                                st.session_state.mock_interview_started = False
+                                st.rerun()
+                        with col2:
+                            if st.button("Start New Interview", key="new_mock_direct"):
+                                st.session_state.mock_interview_started = False
+                                st.session_state.mock_interview_history = []
+                                st.rerun()
+                        with col3:
+                            if st.button("End & Evaluate Interview", key="evaluate_direct"):
+                                with st.spinner("Evaluating your interview..."):
+                                    eval_agent = get_interview_prep_agent(evaluate=True)
+                                    eval_result = eval_agent.invoke({
+                                        "job_title": st.session_state.interview_job_title,
+                                        "user_experience": st.session_state.interview_experience,
+                                        "user_name": st.session_state.user_profile.get("name", "Candidate"),
+                                        "history": st.session_state.mock_interview_history
+                                    })
+                                    st.session_state.interview_evaluation = eval_result.get('output', "Error generating evaluation.")
+                                    st.session_state.mock_interview_started = False
+                                    st.rerun()
                 else:
                     st.session_state.interview_agent_mode = "INTERVIEW_EVALUATE"
-                
-                # Add job title field for interview prep
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    if "interview_job_title" not in st.session_state:
-                        st.session_state.interview_job_title = ""
-                    st.session_state.interview_job_title = st.text_input("Job Title for Interview (Required)", 
-                                                           st.session_state.interview_job_title,
-                                                           help="Enter the job title you're interviewing for")
-                
-                # Initialize interview history if not exists
-                if "interview_history" not in st.session_state:
-                    st.session_state.interview_history = []
+                    
+                    # Check if we have the required interview job title
+                    if not st.session_state.interview_job_title:
+                        st.warning("Please provide a job title at the top of this page before submitting an interview for evaluation.")
+                    
+                    # Add direct interview evaluation interface
+                    st.subheader("Interview Evaluation")
+                    st.write("Get feedback on your past interview performance.")
+                    
+                    # Text area for interview transcript
+                    interview_transcript = st.text_area(
+                        "Paste your interview transcript or describe your interview experience:",
+                        height=200,
+                        key="interview_transcript",
+                        placeholder="Example format:\nInterviewer: Tell me about yourself.\nMe: I am a software engineer with 5 years of experience...\nInterviewer: What projects have you worked on?..."
+                    )
+                    
+                    if st.button("Evaluate Interview", key="evaluate_interview"):
+                        if st.session_state.interview_job_title and interview_transcript:
+                            with st.spinner("Analyzing your interview..."):
+                                eval_agent = get_interview_prep_agent(evaluate=True)
+                                result = eval_agent.invoke({
+                                    "job_title": st.session_state.interview_job_title,
+                                    "user_experience": st.session_state.interview_experience,
+                                    "user_name": st.session_state.user_profile.get("name", "Candidate"),
+                                    "input": interview_transcript
+                                })
+                                
+                                evaluation = result.get('output', "Sorry, I couldn't generate an evaluation.")
+                                
+                                # Store in history
+                                if "interview_evaluation_history" not in st.session_state:
+                                    st.session_state.interview_evaluation_history = []
+                                
+                                st.session_state.interview_evaluation_history.append({
+                                    "job_title": st.session_state.interview_job_title,
+                                    "evaluation": evaluation
+                                })
+                                
+                                # Display evaluation
+                                st.subheader("Interview Evaluation")
+                                st.markdown(evaluation)
+                        else:
+                            if not st.session_state.interview_job_title:
+                                st.warning("Please provide a job title for your interview evaluation.")
+                            if not interview_transcript:
+                                st.warning("Please provide your interview transcript or experience.")
+                    
+                    # Display evaluation history
+                    if "interview_evaluation_history" in st.session_state and st.session_state.interview_evaluation_history:
+                        st.subheader("Previous Interview Evaluations")
+                        if st.button("Clear Evaluation History"):
+                            st.session_state.interview_evaluation_history = []
+                            st.rerun()
+                        
+                        for i, entry in enumerate(reversed(st.session_state.interview_evaluation_history)):
+                            with st.expander(f"**{i+1}. Evaluation for {entry['job_title']}**", expanded=False):
+                                st.markdown(entry['evaluation'])
+                                if st.button("Delete", key=f"delete_eval_{i}"):
+                                    st.session_state.interview_evaluation_history.pop(len(st.session_state.interview_evaluation_history) - 1 - i)
+                                    st.rerun()
             elif st.session_state.active_mode == "TUTORIALS":
                 st.write("Ask me to create learning resources or tutorials on any technical topic.")
+                
+                # Add option for direct tutorial generation
+                if "tutorial_mode" not in st.session_state:
+                    st.session_state.tutorial_mode = "Detailed Tutorial"
+                
+                st.session_state.tutorial_mode = st.radio(
+                    "Tutorial Mode",
+                    ["Detailed Tutorial", "Quick Q&A"],  # Remove Conversational option
+                    horizontal=True,
+                    key="tutorial_mode_select"
+                )
+                
+                # Always use direct mode for tutorials
+                from src.tutorials.agent import get_tutorials_agent
+                from src.guidance.agent import get_qa_bot
+                
+                if st.session_state.tutorial_mode == "Detailed Tutorial":
+                    st.subheader("Tutorials Agent")
+                    st.write("Get detailed guides and blogs on any technical topic.")
+                    tutorial_query = st.text_input("What topic do you want a tutorial on?", key="direct_tutorial_query")
+                    
+                    if st.button("Get Tutorial", key="direct_tutorial_button"):
+                        if tutorial_query:
+                            with st.spinner("Generating comprehensive tutorial..."):
+                                agent = get_tutorials_agent()
+                                result = agent.invoke({
+                                    "user_message": tutorial_query,
+                                    "user_context": st.session_state.user_profile.get("skills", "")
+                                })
+                                
+                                output = ""
+                                if isinstance(result, dict) and 'output' in result:
+                                    output = result['output'].strip()
+                                    
+                                    # Check if the output is empty but we have a result
+                                    if not output and str(result):
+                                        output = f"Error: Extracted output is empty. Using full response instead.\n\n{str(result)}"
+                                else:
+                                    output = f"Error: Could not parse agent output. Full response: {result}"
+
+                                # Store in history and display
+                                if "tutorial_history" not in st.session_state:
+                                    st.session_state.tutorial_history = []
+                                st.session_state.tutorial_history.append({"query": tutorial_query, "result": output})
+                                
+                                # Display tutorial
+                                st.subheader(f"Tutorial: {tutorial_query}")
+                                st.markdown(output)
+                        else:
+                            st.warning("Please enter a topic.")
+                            
+                    # Display tutorial history
+                    if "tutorial_history" in st.session_state and st.session_state.tutorial_history:
+                        st.subheader("Tutorial History")
+                        if st.button("Clear Tutorial History"):
+                            st.session_state.tutorial_history = []
+                            st.rerun()
+                        
+                        for i, entry in enumerate(reversed(st.session_state.tutorial_history)):
+                            with st.expander(f"**{i+1}. {entry['query']}**", expanded=False):
+                                st.markdown(entry['result'])
+                                if st.button("Delete", key=f"delete_tutorial_{i}"):
+                                    st.session_state.tutorial_history.pop(len(st.session_state.tutorial_history) - 1 - i)
+                                    st.rerun()
+                
+                elif st.session_state.tutorial_mode == "Quick Q&A":
+                    st.subheader("Q&A Bot")
+                    st.write("Ask me any quick question about software development, AI, or career topics.")
+                    qa_query = st.text_input("What is your question?", key="qa_query")
+                    
+                    if st.button("Ask", key="qa_button"):
+                        if qa_query:
+                            with st.spinner("Getting your answer..."):
+                                chain = get_qa_bot()
+                                result = chain.invoke({"question": qa_query})
+                                
+                                if "qa_history" not in st.session_state:
+                                    st.session_state.qa_history = []
+                                
+                                answer = ""
+                                if isinstance(result, dict) and 'text' in result:
+                                    answer = result['text']
+                                else:
+                                    answer = str(result) if result else "Sorry, I couldn't find an answer to that question."
+                                    
+                                st.session_state.qa_history.append({"query": qa_query, "result": answer})
+                                
+                                # Display answer
+                                st.subheader("Answer")
+                                st.markdown(answer)
+                        else:
+                            st.warning("Please enter a question.")
+                            
+                    # Display Q&A history
+                    if "qa_history" in st.session_state and st.session_state.qa_history:
+                        st.subheader("Q&A History")
+                        if st.button("Clear Q&A History"):
+                            st.session_state.qa_history = []
+                            st.rerun()
+                        
+                        for i, entry in enumerate(reversed(st.session_state.qa_history)):
+                            with st.expander(f"**{i+1}. {entry['query']}**", expanded=True):
+                                st.markdown(entry['result'])
+                                if st.button("Delete", key=f"delete_qa_{i}"):
+                                    st.session_state.qa_history.pop(len(st.session_state.qa_history) - 1 - i)
+                                    st.rerun()
             else:
                 st.write("Ask me anything about resumes, job search, interview prep, or learning resources!")
             
@@ -372,107 +860,45 @@ def main():
                 else:
                     st.chat_message("assistant").markdown(message["content"])
         
-        # Chat input
-        user_input = st.chat_input("Type your message here...")
-        if user_input:
-            # If in a specific mode, validate required fields
-            if st.session_state.active_mode == "RESUME_BUILDER":
-                if not st.session_state.job_description:
-                    st.error("Please provide a job description before submitting your request.")
-                    st.stop()
-                if not st.session_state.user_details:
-                    st.error("Please provide your details before submitting your request.")
-                    st.stop()
-            
-            elif st.session_state.active_mode == "JOB_SEARCH":
-                if not st.session_state.job_title_search:
-                    st.error("Please provide a job title for your search.")
-                    st.stop()
-                if not st.session_state.job_location:
-                    st.error("Please provide a location for your job search.")
-                    st.stop()
-            
-            elif st.session_state.active_mode == "INTERVIEW_PREP":
-                if not st.session_state.interview_job_title:
-                    st.error("Please provide a job title for your interview preparation.")
-                    st.stop()
-
-            # Display user message
-            st.chat_message("user").write(user_input)
-            
-            # Add user message to the main chat history to have a complete record
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
-            
-            # If in a specific mode, also add to that history
-            if st.session_state.active_mode:
-                st.session_state[current_history_key].append({"role": "user", "content": user_input})
-
-            # Process the message using the orchestrator
-            with st.spinner("Thinking..."):
-                # Get additional context from session state
-                additional_context = {
-                    "job_title": st.session_state.user_profile.get("job_title", ""),
-                    "user_name": st.session_state.user_profile.get("name", ""),
-                    "user_experience": st.session_state.user_profile.get("experience", ""),
-                    "user_context": st.session_state.user_profile.get("skills", ""),
-                    "history": st.session_state.chat_history # Pass the main chat history
-                }
+        # Chat input - only show in general chat mode (when active_mode is None)
+        if st.session_state.active_mode is None:
+            user_input = st.chat_input("Type your message here...")
+            if user_input:
+                # Display user message
+                st.chat_message("user").write(user_input)
                 
-                # Add specific context for different modes
-                if st.session_state.active_mode == "RESUME_BUILDER":
-                    additional_context["user_details"] = st.session_state.user_details
-                    additional_context["job_description"] = st.session_state.job_description
-                    if st.session_state.get("previous_resume"):
-                        additional_context["previous_resume"] = st.session_state.previous_resume
-                        
-                elif st.session_state.active_mode == "JOB_SEARCH":
-                    additional_context["job_title"] = st.session_state.job_title_search
-                    additional_context["location"] = st.session_state.job_location
-                    additional_context["job_type"] = st.session_state.job_type
-                    
-                elif st.session_state.active_mode == "INTERVIEW_PREP":
-                    additional_context["job_title"] = st.session_state.interview_job_title
-                    additional_context["interview_mode"] = st.session_state.get("interview_agent_mode", "INTERVIEW_PREP")
+                # Add user message to the main chat history
+                st.session_state.chat_history.append({"role": "user", "content": user_input})
 
-                # Determine agent type
-                agent_type = st.session_state.active_mode  # Can be None if in main chat
-
-                # Call the orchestrator
-                response = st.session_state.orchestrator.invoke(
-                    user_input,
-                    agent_type=agent_type,
-                    additional_context=additional_context
-                )
-                
-                # Extract the agent's response and the classified agent type
-                agent_response = response.get("output", "Sorry, I encountered an error.")
-                classified_agent = response.get("agent_type", st.session_state.active_mode)
-
-                # If the orchestrator classified the intent, update the history
-                if classified_agent and classified_agent != "ORCHESTRATOR":
-                    history_map = {
-                        "RESUME_BUILDER": "resume_chat_history",
-                        "JOB_SEARCH": "job_search_chat_history",
-                        "INTERVIEW_PREP": "interview_chat_history",
-                        "TUTORIALS": "tutorials_chat_history"
+                # Process the message using the orchestrator
+                with st.spinner("Thinking..."):
+                    # Get additional context from session state
+                    additional_context = {
+                        "job_title": st.session_state.user_profile.get("job_title", ""),
+                        "user_name": st.session_state.user_profile.get("name", ""),
+                        "user_experience": st.session_state.user_profile.get("experience", ""),
+                        "user_context": st.session_state.user_profile.get("skills", ""),
+                        "history": st.session_state.chat_history # Pass the main chat history
                     }
-                    classified_history_key = history_map.get(classified_agent)
                     
-                    # Add assistant response to the correct history
-                    if classified_history_key:
-                        # Add user message if not already there
-                        if not any(m["role"] == "user" and m["content"] == user_input for m in st.session_state[classified_history_key]):
-                            st.session_state[classified_history_key].append({"role": "user", "content": user_input})
-                        st.session_state[classified_history_key].append({"role": "assistant", "content": agent_response})
-
-                # Add assistant response to main history
-                st.session_state.chat_history.append({"role": "assistant", "content": agent_response})
-                
-                # Display the response
-                st.chat_message("assistant").markdown(agent_response)
-                
-                # Rerun to update the chat display
-                st.rerun()
+                    # In main chat, allow routing to any specialized agent
+                    response = st.session_state.orchestrator.process_message(
+                        user_input,
+                        agent_type=None,  # Uses routing to any agent type
+                        **additional_context
+                    )
+                    
+                    # Extract the agent's response
+                    agent_response = response.get("output", "Sorry, I encountered an error.")
+                    
+                    # Add assistant response to main history
+                    st.session_state.chat_history.append({"role": "assistant", "content": agent_response})
+                    
+                    # Display the response
+                    st.chat_message("assistant").markdown(agent_response)
+                    
+                    # Rerun to update the chat display
+                    st.rerun()
 
     elif st.session_state.current_view == "profile":
         st.header("Your Profile")
