@@ -39,7 +39,7 @@ def _load_graph():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CSS — Premium dark UI
+# CSS — Premium Product-Grade Dark UI
 # ═══════════════════════════════════════════════════════════════════════════════
 
 st.markdown("""
@@ -50,139 +50,199 @@ st.markdown("""
 /* ── Global ── */
 html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
-    background-color: #0f1117;
-    color: #e2e8f0;
+    background-color: #090d16;
+    color: #cbd5e1;
 }
-[data-testid="stAppViewContainer"] { background: #0f1117; }
-[data-testid="stSidebar"]          { background: #161b27; border-right: 1px solid #1e293b; }
+[data-testid="stAppViewContainer"] { background: #090d16; }
+[data-testid="stSidebar"]          { background: #0f172a; border-right: 1px solid #1e293b; }
 [data-testid="stSidebar"] * { font-family: 'Inter', sans-serif !important; }
 
-/* ── Header gradient ── */
-.app-header {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
-    border-radius: 16px;
-    padding: 24px 32px;
-    margin-bottom: 24px;
-    box-shadow: 0 8px 32px rgba(99,102,241,0.3);
+/* ── Header ── */
+.saas-header {
+    background: transparent !important;
+    box-shadow: none !important;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 16px;
+    margin-bottom: 28px;
 }
-.app-header h1 { color: #fff; font-size: 2rem; font-weight: 700; margin: 0; }
-.app-header p  { color: rgba(255,255,255,0.8); margin: 6px 0 0; font-size: 1rem; }
+.saas-header h1 {
+    color: #f8fafc;
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+.saas-header p {
+    color: #64748b;
+    margin: 6px 0 0;
+    font-size: 0.95rem;
+}
+
+/* Remove default focus red outline */
+button:focus, button:active, button:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
+}
+[data-testid="stSidebar"] .stButton > button:focus {
+    border-color: transparent !important;
+    box-shadow: none !important;
+    color: #a5b4fc !important;
+}
 
 /* ── Mode badge ── */
 .mode-badge {
     display: inline-flex; align-items: center; gap: 8px;
-    background: rgba(99,102,241,0.15);
-    border: 1px solid rgba(99,102,241,0.4);
-    border-radius: 24px;
-    padding: 6px 16px;
-    font-size: 0.85rem; font-weight: 500; color: #a5b4fc;
+    background: rgba(79, 70, 229, 0.08);
+    border: 1px solid rgba(79, 70, 229, 0.3);
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 0.8rem; font-weight: 500; color: #a5b4fc;
     margin-bottom: 16px;
 }
 
 /* ── Chat messages ── */
 [data-testid="stChatMessage"] {
-    border-radius: 12px !important;
-    margin-bottom: 8px !important;
+    border-radius: 8px !important;
+    margin-bottom: 12px !important;
     border: 1px solid #1e293b !important;
+    background: #0f172a !important;
 }
 [data-testid="stChatMessage"][data-testid*="user"] {
-    background: rgba(99,102,241,0.08) !important;
+    background: rgba(79, 70, 229, 0.04) !important;
+    border-color: rgba(79, 70, 229, 0.2) !important;
 }
 
 /* ── Input box ── */
 [data-testid="stChatInput"] textarea {
     background: #1e293b !important;
     border: 1px solid #334155 !important;
-    border-radius: 12px !important;
-    color: #e2e8f0 !important;
+    border-radius: 8px !important;
+    color: #f8fafc !important;
     font-family: 'Inter', sans-serif !important;
 }
 [data-testid="stChatInput"] textarea:focus {
-    border-color: #6366f1 !important;
-    box-shadow: 0 0 0 2px rgba(99,102,241,0.25) !important;
+    border-color: #4f46e5 !important;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.25) !important;
 }
 
 /* ── Sidebar nav buttons ── */
-.nav-btn {
-    display: flex; align-items: center; gap: 10px;
-    width: 100%; padding: 10px 14px;
-    border-radius: 10px; border: none;
-    background: transparent; color: #94a3b8;
-    font-size: 0.9rem; font-weight: 500;
-    cursor: pointer; transition: all 0.2s;
-    text-align: left; margin-bottom: 4px;
+[data-testid="stSidebar"] .stButton > button {
+    background: transparent !important;
+    color: #94a3b8 !important;
+    border: 1px solid transparent !important;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    font-size: 0.88rem !important;
+    font-weight: 500 !important;
+    padding: 8px 14px !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+    transform: none !important;
+    margin-bottom: 2px !important;
+    transition: all 0.15s ease !important;
 }
-.nav-btn:hover { background: rgba(99,102,241,0.15); color: #a5b4fc; }
-.nav-btn.active { background: rgba(99,102,241,0.2); color: #a5b4fc;
-                  border-left: 3px solid #6366f1; }
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: #1e293b !important;
+    color: #f8fafc !important;
+}
 
 /* ── Cards ── */
 .card {
-    background: #1a2035; border: 1px solid #1e293b;
-    border-radius: 14px; padding: 20px;
-    margin-bottom: 16px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+    background: #121826; border: 1px solid #1e293b;
+    border-radius: 12px; padding: 22px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
-.card h3 { color: #a5b4fc; margin-top: 0; font-size: 1rem; }
+.card h3 { color: #f8fafc; margin-top: 0; font-size: 1.1rem; font-weight: 600; }
 
 /* ── Graph viz container ── */
 .graph-container {
-    background: #0d1320; border: 1px solid #1e293b;
-    border-radius: 14px; padding: 16px;
+    background: #090d16; border: 1px solid #1e293b;
+    border-radius: 12px; padding: 16px;
     font-family: monospace; font-size: 0.78rem;
 }
 
-/* ── Streamlit component overrides ── */
+/* ── Action Buttons (Primary) ── */
 .stButton > button {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
-    color: #fff !important; border: none !important;
-    border-radius: 10px !important; font-weight: 500 !important;
-    transition: all 0.2s !important;
+    background: #4f46e5 !important;
+    color: #ffffff !important; border: 1px solid #4338ca !important;
+    border-radius: 8px !important; font-weight: 500 !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+    transition: all 0.15s ease !important;
+    padding: 8px 16px !important;
 }
 .stButton > button:hover {
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 16px rgba(99,102,241,0.4) !important;
+    background: #5850ec !important;
+    border-color: #4f46e5 !important;
+    transform: translateY(0px) !important;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25) !important;
 }
+
+/* ── Secondary/Reset/Clear Buttons ── */
+div[data-testid*="Clear"] button, div[data-testid*="Reset"] button, div[data-testid*="End"] button {
+    background: transparent !important;
+    color: #94a3b8 !important;
+    border: 1px solid #334155 !important;
+}
+div[data-testid*="Clear"] button:hover, div[data-testid*="Reset"] button:hover, div[data-testid*="End"] button:hover {
+    background: #1e293b !important;
+    color: #f8fafc !important;
+    border-color: #4b5563 !important;
+    box-shadow: none !important;
+}
+
+/* ── Textfields and Inputs ── */
 .stTextInput > div > input,
 .stTextArea > div > textarea,
 .stSelectbox > div > div {
-    background: #1e293b !important; color: #e2e8f0 !important;
-    border: 1px solid #334155 !important; border-radius: 10px !important;
+    background: #0f172a !important; color: #f8fafc !important;
+    border: 1px solid #1e293b !important; border-radius: 8px !important;
+    padding: 10px 14px !important;
+}
+.stTextInput > div > input:focus,
+.stTextArea > div > textarea:focus {
+    border-color: #4f46e5 !important;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2) !important;
 }
 .stRadio > div { background: transparent !important; }
-label { color: #94a3b8 !important; font-size: 0.85rem !important; }
+label { color: #94a3b8 !important; font-size: 0.85rem !important; font-weight: 500 !important; }
 
 /* ── Metric cards ── */
 [data-testid="metric-container"] {
-    background: #1a2035 !important; border: 1px solid #1e293b !important;
-    border-radius: 12px !important; padding: 12px !important;
+    background: #121826 !important; border: 1px solid #1e293b !important;
+    border-radius: 10px !important; padding: 12px !important;
 }
 
 /* ── Spinner ── */
-[data-testid="stSpinner"] { color: #6366f1 !important; }
+[data-testid="stSpinner"] { color: #4f46e5 !important; }
 
 /* ── Divider ── */
 hr { border-color: #1e293b !important; }
 
 /* ── Expander ── */
 .streamlit-expanderHeader {
-    background: #1a2035 !important; border-radius: 10px !important;
+    background: #121826 !important; border-radius: 8px !important;
     color: #94a3b8 !important;
+    border: 1px solid #1e293b !important;
 }
 
 /* ── Success / Info / Warning banners ── */
-.stAlert { border-radius: 10px !important; }
+.stAlert { border-radius: 8px !important; border: 1px solid transparent !important; }
+div[data-testid="stNotification-success"] { background: rgba(16, 185, 129, 0.06) !important; border-color: rgba(16, 185, 129, 0.2) !important; color: #34d399 !important; }
+div[data-testid="stNotification-warning"] { background: rgba(245, 158, 11, 0.06) !important; border-color: rgba(245, 158, 11, 0.2) !important; color: #fbbf24 !important; }
+div[data-testid="stNotification-info"] { background: rgba(59, 130, 246, 0.06) !important; border-color: rgba(59, 130, 246, 0.2) !important; color: #60a5fa !important; }
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #0f1117; }
-::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #475569; }
+::-webkit-scrollbar-track { background: #090d16; }
+::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #334155; }
 
 /* ── Tab styling ── */
-.stTabs [data-baseweb="tab-list"] { background: #161b27; border-radius: 10px; }
-.stTabs [data-baseweb="tab"] { color: #94a3b8; font-weight: 500; }
-.stTabs [aria-selected="true"] { color: #a5b4fc !important; }
+.stTabs [data-baseweb="tab-list"] { background: #0f172a; border-radius: 8px; border: 1px solid #1e293b; padding: 4px; }
+.stTabs [data-baseweb="tab"] { color: #94a3b8; font-weight: 500; padding: 8px 16px; border-radius: 6px; }
+.stTabs [aria-selected="true"] { color: #f8fafc !important; background: #1e293b !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -409,12 +469,13 @@ def _sidebar_nav():
     with st.sidebar:
         # ── Logo ──────────────────────────────────────────────────────────────
         st.markdown("""
-        <div style="padding: 16px 0 8px;">
-            <div style="font-size:1.5rem; font-weight:700; color:#a5b4fc;">
-                🚀 AI Career Assistant
+        <div style="padding: 12px 0 16px;">
+            <div style="font-size:1.25rem; font-weight:700; color:#f8fafc; letter-spacing:-0.02em; display:flex; align-items:center; gap:10px;">
+                <span style="background:linear-gradient(135deg, #4f46e5, #8b5cf6); width:28px; height:28px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; color:#ffffff; font-size:0.95rem; font-weight:bold; box-shadow:0 2px 8px rgba(79,70,229,0.3);">C</span>
+                <span>career.ai</span>
             </div>
-            <div style="font-size:0.8rem; color:#64748b; margin-top:4px;">
-                Powered by LangGraph + Together AI
+            <div style="font-size:0.78rem; color:#475569; margin-top:6px; font-weight:500; text-transform:uppercase; letter-spacing:0.05em; padding-left:2px;">
+                Agentic Assistant
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -435,9 +496,18 @@ def _sidebar_nav():
 
         for mode, icon, label, desc in nav_items:
             active = st.session_state.active_mode == mode
-            bg     = "rgba(99,102,241,0.15)" if active else "transparent"
-            border = "border-left: 3px solid #6366f1;" if active else "border-left: 3px solid transparent;"
-            color  = "#a5b4fc" if active else "#94a3b8"
+            if active:
+                st.markdown(f"""
+                <style>
+                div[data-testid="stSidebar"] div.st-key-nav_{mode} button {{
+                    background: rgba(79, 70, 229, 0.12) !important;
+                    color: #a5b4fc !important;
+                    border-left: 3px solid #4f46e5 !important;
+                    border-radius: 0 6px 6px 0 !important;
+                    padding-left: 11px !important;
+                }}
+                </style>
+                """, unsafe_allow_html=True)
             if st.button(f"{icon}  {label}", key=f"nav_{mode}", use_container_width=True,
                          help=desc):
                 st.session_state.active_mode = mode
@@ -521,7 +591,7 @@ def _sidebar_nav():
 
 def _header(title: str, subtitle: str = ""):
     st.markdown(f"""
-    <div class="app-header">
+    <div class="saas-header">
         <h1>{title}</h1>
         {"<p>" + subtitle + "</p>" if subtitle else ""}
     </div>
