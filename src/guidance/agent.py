@@ -281,17 +281,98 @@ def get_llm(role: str = "general_qa", **overrides) -> "ChatTogetherNative":
 
 
 def get_search_tool(description: str = "Search the internet for up-to-date information.") -> Tool:
-    """Return a configured DuckDuckGo search Tool ready to use in ReAct agents with LLM fallback."""
+    """Return a configured search Tool with Google Search MCP and DuckDuckGo/LLM fallbacks."""
     search = DuckDuckGoSearchRun()
 
+    def _mcp_google_search(query: str) -> str:
+        import os
+        import asyncio
+        import nest_asyncio
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        google_api_key = os.getenv("GOOGLE_API_KEY", "").strip()
+        google_cse_id = os.getenv("GOOGLE_CSE_ID", "").strip()
+        if not google_api_key:
+            raise ValueError("GOOGLE_API_KEY not configured in env.")
+
+        async def _search():
+            env = os.environ.copy()
+            env["GOOGLE_API_KEY"] = google_api_key
+            if google_cse_id:
+                env["GOOGLE_CSE_ID"] = google_cse_id
+
+            command = "npx"
+            if os.name == "nt":
+                command = "npx.cmd"
+
+            server_params = StdioServerParameters(
+                command=command,
+                args=["-y", "@modelcontextprotocol/server-google-search"],
+                env=env
+            )
+
+            async with stdio_client(server_params) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+
+                    tools_result = await session.list_tools()
+                    search_tool_name = None
+                    for tool in tools_result.tools:
+                        if "search" in tool.name.lower():
+                            search_tool_name = tool.name
+                            break
+
+                    if not search_tool_name:
+                        raise Exception("No search tool found on Google Search MCP server.")
+
+                    call_result = await session.call_tool(
+                        search_tool_name,
+                        arguments={"query": query}
+                    )
+
+                    text_contents = []
+                    for content in call_result.content:
+                        if content.type == "text":
+                            text_contents.append(content.text)
+
+                    res_str = "\n".join(text_contents)
+                    if not res_str.strip():
+                        raise Exception("Google Search MCP returned empty results.")
+                    return res_str
+
+        # Ensure event loop compatibility in streamlit threads
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        if loop.is_running():
+            nest_asyncio.apply()
+            return loop.run_until_complete(_search())
+        else:
+            return loop.run_until_complete(_search())
+
     def _safe_run(query: str) -> str:
+        import os
+        # 1. Try Google Search MCP if configured
+        if os.getenv("GOOGLE_API_KEY", "").strip():
+            try:
+                print(f"[search] Querying Google Search MCP server for '{query}'...")
+                res = _mcp_google_search(query)
+                return res
+            except Exception as e:
+                print(f"[search] Google Search MCP failed: {e}. Falling back to DuckDuckGo...")
+
+        # 2. Try DuckDuckGo search
         try:
             res = search.run(query)
             if not res or "No good DuckDuckGo Search Result was found" in res or res.strip() == "[]" or res.strip() == "":
                 raise Exception("Empty or block result from DDG")
             return res
         except Exception:
-            # Fallback to LLM search simulation to prevent ReAct loop timeouts
+            # 3. Fallback to LLM search simulation
             try:
                 # Use the router model (Meta-Llama-3-8B) as it is free and fast
                 llm = get_llm("router")

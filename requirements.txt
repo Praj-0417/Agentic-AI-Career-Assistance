@@ -12,8 +12,9 @@ langchain-google-genai>=1.0.0
 langgraph>=0.2.0
 langgraph-checkpoint-sqlite>=0.0.1
 
-# Search tool
+# Search tools
 duckduckgo-search>=5.0.0
+mcp>=1.0.0
 
 # HTTP
 requests>=2.31.0
