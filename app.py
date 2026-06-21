@@ -499,7 +499,7 @@ def _sidebar_nav():
             if active:
                 st.markdown(f"""
                 <style>
-                div[data-testid="stSidebar"] div.st-key-nav_{mode} button {{
+                [data-testid="stSidebar"] div.st-key-nav_{mode} button {{
                     background: rgba(79, 70, 229, 0.12) !important;
                     color: #a5b4fc !important;
                     border-left: 3px solid #4f46e5 !important;
