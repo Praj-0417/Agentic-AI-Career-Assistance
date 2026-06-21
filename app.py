@@ -290,7 +290,7 @@ def convert_markdown_to_html(text: str) -> str:
         if list_match:
             indent = len(list_match.group(1))
             content = list_match.group(2)
-            style = "margin-bottom:6px;margin-left:20px;" if indent == 0 else f"margin-bottom:4px;margin-left:{20px + indent * 8}px;list-style-type:circle;"
+            style = "margin-bottom:6px;margin-left:20px;" if indent == 0 else f"margin-bottom:4px;margin-left:{20 + indent * 8}px;list-style-type:circle;"
             if not in_list:
                 processed_lines.append('<ul style="margin-bottom:12px;padding-left:0;list-style-type:disc;color:#cbd5e1;">')
                 in_list = True
