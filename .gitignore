@@ -49,3 +49,7 @@ Desktop.ini
 
 # Streamlit
 .streamlit/
+
+# Database files
+*.db
+data/
