@@ -18,3 +18,7 @@ mcp>=1.0.0
 
 # HTTP
 requests>=2.31.0
+
+# API Server
+fastapi>=0.100.0
+uvicorn>=0.20.0
