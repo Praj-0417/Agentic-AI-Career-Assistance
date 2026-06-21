@@ -259,6 +259,74 @@ AGENT_BADGE = {
 }
 
 
+def convert_markdown_to_html(text: str) -> str:
+    import re
+    html = text
+    
+    # Code blocks
+    html = re.sub(r'```(?:\w+)?\n(.*?)\n```', r'<pre style="background:#0f1117;border:1px solid #1e293b;border-radius:8px;padding:12px;color:#e2e8f0;overflow-x:auto;font-family:monospace;font-size:0.85rem;margin-bottom:12px;">\1</pre>', html, flags=re.DOTALL)
+    
+    # Headers
+    html = re.sub(r'^###\s+(.*?)$', r'<h4 style="color:#a5b4fc;margin-top:16px;margin-bottom:8px;font-size:1.08rem;font-weight:600;">\1</h4>', html, flags=re.MULTILINE)
+    html = re.sub(r'^##\s+(.*?)$', r'<h3 style="color:#a5b4fc;margin-top:18px;margin-bottom:10px;font-size:1.2rem;font-weight:600;">\1</h3>', html, flags=re.MULTILINE)
+    html = re.sub(r'^#\s+(.*?)$', r'<h2 style="color:#a5b4fc;margin-top:20px;margin-bottom:12px;font-size:1.35rem;font-weight:700;">\1</h2>', html, flags=re.MULTILINE)
+    
+    # Bold
+    html = re.sub(r'\*\*(.*?)\*\*', r'<strong style="color:#ffffff;font-weight:600;">\1</strong>', html)
+    
+    # Italic
+    html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', html)
+    
+    # Links
+    html = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2" target="_blank" style="color:#818cf8;text-decoration:none;font-weight:500;border-bottom:1px dashed #818cf8;padding-bottom:1px;">\1</a>', html)
+    
+    # List parsing: line by line
+    lines = html.split('\n')
+    processed_lines = []
+    in_list = False
+    for line in lines:
+        stripped = line.strip()
+        list_match = re.match(r'^(\s*)[-*\u2022]\s+(.*?)$', line)
+        if list_match:
+            indent = len(list_match.group(1))
+            content = list_match.group(2)
+            style = "margin-bottom:6px;margin-left:20px;" if indent == 0 else f"margin-bottom:4px;margin-left:{20px + indent * 8}px;list-style-type:circle;"
+            if not in_list:
+                processed_lines.append('<ul style="margin-bottom:12px;padding-left:0;list-style-type:disc;color:#cbd5e1;">')
+                in_list = True
+            processed_lines.append(f'<li style="{style}">{content}</li>')
+        else:
+            if in_list:
+                processed_lines.append('</ul>')
+                in_list = False
+            if stripped:
+                if not stripped.startswith('<h') and not stripped.startswith('<u') and not stripped.startswith('</u') and not stripped.startswith('<li') and not stripped.startswith('<pre') and not stripped.startswith('</pre'):
+                    if stripped.startswith('>'):
+                        processed_lines.append(f'<blockquote style="border-left:4px solid #818cf8;padding-left:12px;color:#94a3b8;margin:8px 0;font-style:italic;">{stripped[1:].strip()}</blockquote>')
+                    else:
+                        processed_lines.append(f'<p style="margin-bottom:10px;line-height:1.6;color:#cbd5e1;">{stripped}</p>')
+                else:
+                    processed_lines.append(line)
+            else:
+                processed_lines.append('<div style="height:8px;"></div>')
+    if in_list:
+        processed_lines.append('</ul>')
+        
+    return '\n'.join(processed_lines)
+
+
+def render_styled_card(title: str, markdown_content: str):
+    html_content = convert_markdown_to_html(markdown_content)
+    st.markdown(f"""
+    <div class="card" style="background:#1a2035; border:1px solid #1e293b; border-radius:14px; padding:24px; margin-bottom:20px; box-shadow:0 4px 20px rgba(0,0,0,0.25);">
+        <h3 style="color:#a5b4fc; font-family:\'Inter\',sans-serif; margin-top:0; border-bottom:1px solid #2d3748; padding-bottom:10px; margin-bottom:18px; font-size:1.12rem; font-weight:600;">{title}</h3>
+        <div style="font-family:\'Inter\',sans-serif; font-size:0.92rem; color:#cbd5e1; line-height:1.6;">
+            {html_content}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
 def _invoke_graph(user_text: str, extra_task: dict | None = None) -> dict[str, Any]:
     """
     Send a user message through the LangGraph pipeline.
@@ -406,6 +474,44 @@ def _sidebar_nav():
                 st.rerun()
             if st.button("🗑️ Clear Chat", use_container_width=True):
                 st.session_state.messages = []
+                st.rerun()
+
+        # ── Google Search MCP Settings ───────────────────────────────────────
+        with st.expander("🔍 Web Search Settings", expanded=False):
+            st.caption("Optional configuration for Google Search MCP server.")
+            
+            # Use environment variable as default
+            google_api_key_env = os.getenv("GOOGLE_API_KEY", "")
+            google_cse_id_env = os.getenv("GOOGLE_CSE_ID", "")
+            
+            # Input keys
+            google_key_input = st.text_input(
+                "Google API Key",
+                value=google_api_key_env,
+                type="password",
+                help="Requires custom search JSON API key"
+            )
+            google_cse_input = st.text_input(
+                "Google CSE ID",
+                value=google_cse_id_env,
+                help="Requires Google Custom Search Engine ID"
+            )
+            
+            if st.button("💾 Apply Search Keys", use_container_width=True):
+                if google_key_input.strip():
+                    os.environ["GOOGLE_API_KEY"] = google_key_input.strip()
+                    if google_cse_input.strip():
+                        os.environ["GOOGLE_CSE_ID"] = google_cse_input.strip()
+                    else:
+                        if "GOOGLE_CSE_ID" in os.environ:
+                            del os.environ["GOOGLE_CSE_ID"]
+                    st.success("Google API Key configured!")
+                else:
+                    if "GOOGLE_API_KEY" in os.environ:
+                        del os.environ["GOOGLE_API_KEY"]
+                    if "GOOGLE_CSE_ID" in os.environ:
+                        del os.environ["GOOGLE_CSE_ID"]
+                    st.info("Reset to DuckDuckGo search fallback.")
                 st.rerun()
 
 
@@ -615,7 +721,7 @@ def _job_search_view():
             st.session_state.graph_trace = result.get("graph_trace", [])
             output = result.get("agent_output", "No results found.")
             st.markdown("---")
-            st.markdown(output)
+            render_styled_card(f"🔍 Job Search Results: {job_title} ({location})", output)
         else:
             st.warning("Please provide a job title and location.")
 
@@ -654,7 +760,7 @@ def _interview_view():
                         },
                     )
                 st.session_state.graph_trace = result.get("graph_trace", [])
-                st.markdown(result.get("agent_output", ""))
+                render_styled_card(f"🎯 Interview Prep Guide: {job_title}", result.get("agent_output", ""))
             else:
                 st.warning("Please provide a job title.")
 
@@ -742,9 +848,8 @@ def _interview_view():
                     eval_result = evaluation_node(eval_state)
                     st.session_state.mock_started = False
                     st.divider()
-                    st.subheader("📊 Your Evaluation")
-                    st.markdown(eval_result.get("agent_output", ""))
-
+                    render_styled_card("📊 Mock Interview Evaluation", eval_result.get("agent_output", ""))
+        
     else:  # Evaluate
         transcript = st.text_area(
             "Paste your interview transcript",
@@ -764,7 +869,7 @@ def _interview_view():
                         "interview_transcript":  transcript,
                     }
                     eval_result = evaluation_node(eval_state)
-                st.markdown(eval_result.get("agent_output", ""))
+                render_styled_card("📊 Interview Evaluation", eval_result.get("agent_output", ""))
             else:
                 st.warning("Please provide job title and transcript.")
 
@@ -788,7 +893,7 @@ def _tutorials_view():
             st.session_state.graph_trace = result.get("graph_trace", [])
             output = result.get("agent_output", "")
             if output:
-                st.markdown(output)
+                render_styled_card(f"📚 Tutorial: {topic}", output)
             else:
                 st.warning("Couldn't generate tutorial. Please try again.")
         else:
@@ -851,7 +956,7 @@ def _salary_view():
             if output and not output.startswith("❌"):
                 st.success("✅ Negotiation playbook ready!")
                 st.divider()
-                st.markdown(output)
+                render_styled_card(f"💰 Salary Negotiation Playbook: {job_title}", output)
             else:
                 st.error(output or "Something went wrong. Please try again.")
         else:
