@@ -1,24 +1,22 @@
 """
-Graph Builder — wires all nodes into a LangGraph StateGraph.
+src/graph/graph_builder.py
+─────────────────────────────────────────────────────────────────────────────
+Graph Builder — wires all agent nodes into a LangGraph StateGraph.
 
-The graph topology:
+Topology:
+    [START] → router → {resume, job_search, interview_prep, mock_interview,
+                        evaluation, tutorials, general_qa, clarifier,
+                        salary_negotiator} → [END]
 
-    [START] → router → {resume_builder, job_search, interview_prep,
-                        mock_interview, evaluation, tutorials,
-                        general_qa, clarifier} → [END]
-
-Every node returns a partial state update; LangGraph merges it
-using the reducers defined on AgentState.
+All node functions are imported from src/agents/<agent>/ packages.
+All node name constants come from src/config.py.
 
 Usage:
-    from src.graph.graph_builder import compile_graph, get_graph_mermaid
+    from src.graph.graph_builder import compile_graph
     from src.graph.checkpointer import get_checkpointer
 
-    checkpointer = get_checkpointer()
-    graph = compile_graph(checkpointer)
-
-    config = {"configurable": {"thread_id": "session-abc"}}
-    result = graph.invoke(initial_state, config)
+    graph = compile_graph(get_checkpointer())
+    result = graph.invoke(state, {"configurable": {"thread_id": "abc"}})
 """
 
 from __future__ import annotations
@@ -35,20 +33,24 @@ from src.config import (
     NODE_TUTORIALS, NODE_GENERAL_QA, NODE_CLARIFIER, NODE_SALARY,
 )
 
-# ── Import all node functions ─────────────────────────────────────────────────
-from src.graph.nodes.router_node        import router_node
-from src.graph.nodes.resume_builder_node import resume_builder_node
-from src.graph.nodes.job_search_node    import job_search_node
-from src.graph.nodes.interview_prep_node import interview_prep_node
-from src.graph.nodes.mock_interview_node import mock_interview_node
-from src.graph.nodes.evaluation_node    import evaluation_node
-from src.graph.nodes.tutorials_node     import tutorials_node
-from src.graph.nodes.general_qa_node    import general_qa_node
-from src.graph.nodes.clarifier_node     import clarifier_node
-from src.graph.nodes.salary_negotiator_node import salary_negotiator_node   # NEW
+# ── Import from new agents/ package structure ─────────────────────────────────
+from src.agents.router      import router_node
+from src.agents.resume      import resume_builder_node
+from src.agents.job_search  import job_search_node
+from src.agents.interview   import interview_prep_node, mock_interview_node, evaluation_node
+from src.agents.tutorials   import tutorials_node
+from src.agents.salary      import salary_negotiator_node
+from src.agents.general     import general_qa_node, clarifier_node
 
 
-# ─── Supervisor / conditional edge ───────────────────────────────────────────
+# ─── Conditional edge: router → specialist ────────────────────────────────────
+
+_VALID_DESTINATIONS = {
+    NODE_RESUME, NODE_JOB_SEARCH, NODE_INTERVIEW_PREP,
+    NODE_MOCK_INTERVIEW, NODE_EVALUATION, NODE_TUTORIALS,
+    NODE_GENERAL_QA, NODE_CLARIFIER, NODE_SALARY,
+}
+
 
 def _route_after_router(state: AgentState) -> Literal[
     "resume_builder", "job_search", "interview_prep",
@@ -56,28 +58,20 @@ def _route_after_router(state: AgentState) -> Literal[
     "general_qa", "clarifier", "salary_negotiator"
 ]:
     """
-    Reads `current_agent` set by router_node and returns the next node name.
-    This function is used as the conditional edge from router → specialist.
+    Reads `current_agent` set by router_node.
+    Falls back to `general_qa` if the value is unrecognised.
     """
     destination = state.get("current_agent", NODE_GENERAL_QA)
-    valid = {
-        NODE_RESUME, NODE_JOB_SEARCH, NODE_INTERVIEW_PREP,
-        NODE_MOCK_INTERVIEW, NODE_EVALUATION, NODE_TUTORIALS,
-        NODE_GENERAL_QA, NODE_CLARIFIER, NODE_SALARY,
-    }
-    return destination if destination in valid else NODE_GENERAL_QA
+    return destination if destination in _VALID_DESTINATIONS else NODE_GENERAL_QA
 
 
-# ─── Graph builder ────────────────────────────────────────────────────────────
+# ─── Graph construction ───────────────────────────────────────────────────────
 
 def build_graph() -> StateGraph:
-    """
-    Construct the StateGraph (uncompiled).
-    Useful for visualisation without requiring a checkpointer.
-    """
+    """Construct the StateGraph (uncompiled). Safe to call without a checkpointer."""
     builder = StateGraph(AgentState)
 
-    # ── Register all nodes ───────────────────────────────────────────────────
+    # Register nodes
     builder.add_node(NODE_ROUTER,         router_node)
     builder.add_node(NODE_RESUME,         resume_builder_node)
     builder.add_node(NODE_JOB_SEARCH,     job_search_node)
@@ -87,12 +81,12 @@ def build_graph() -> StateGraph:
     builder.add_node(NODE_TUTORIALS,      tutorials_node)
     builder.add_node(NODE_GENERAL_QA,     general_qa_node)
     builder.add_node(NODE_CLARIFIER,      clarifier_node)
-    builder.add_node(NODE_SALARY,         salary_negotiator_node)   # NEW
+    builder.add_node(NODE_SALARY,         salary_negotiator_node)
 
-    # ── Entry edge: START → router ───────────────────────────────────────────
+    # Entry
     builder.add_edge(START, NODE_ROUTER)
 
-    # ── Conditional edge: router → one of the specialist nodes ───────────────
+    # Conditional routing
     builder.add_conditional_edges(
         NODE_ROUTER,
         _route_after_router,
@@ -105,16 +99,12 @@ def build_graph() -> StateGraph:
             NODE_TUTORIALS:      NODE_TUTORIALS,
             NODE_GENERAL_QA:     NODE_GENERAL_QA,
             NODE_CLARIFIER:      NODE_CLARIFIER,
-            NODE_SALARY:         NODE_SALARY,         # NEW
+            NODE_SALARY:         NODE_SALARY,
         },
     )
 
-    # ── Terminal edges: all specialist nodes → END ───────────────────────────
-    for node in [
-        NODE_RESUME, NODE_JOB_SEARCH, NODE_INTERVIEW_PREP,
-        NODE_MOCK_INTERVIEW, NODE_EVALUATION, NODE_TUTORIALS,
-        NODE_GENERAL_QA, NODE_CLARIFIER, NODE_SALARY,   # NEW
-    ]:
+    # All specialist nodes → END
+    for node in _VALID_DESTINATIONS:
         builder.add_edge(node, END)
 
     return builder
@@ -122,15 +112,14 @@ def build_graph() -> StateGraph:
 
 def compile_graph(checkpointer: BaseCheckpointSaver | None = None):
     """
-    Compile the StateGraph and optionally attach a checkpointer
-    for persistent memory across sessions.
+    Compile the StateGraph and optionally attach a checkpointer.
 
     Args:
-        checkpointer: A LangGraph checkpointer (e.g. SqliteSaver).
-                      Pass None for an in-memory-only graph.
+        checkpointer: SqliteSaver or any LangGraph-compatible checkpointer.
+                      Pass None for an in-memory-only (no persistence) graph.
 
     Returns:
-        Compiled graph (CompiledGraph) ready for .invoke() / .stream()
+        Compiled CompiledGraph ready for .invoke() / .stream()
     """
     builder = build_graph()
     if checkpointer:
@@ -139,30 +128,26 @@ def compile_graph(checkpointer: BaseCheckpointSaver | None = None):
 
 
 def get_graph_mermaid() -> str:
-    """
-    Return a Mermaid diagram string of the graph topology.
-    Used by the Streamlit UI to render the live graph visualisation.
-    """
+    """Return a Mermaid diagram string of the current graph topology."""
     try:
-        graph = compile_graph()   # No checkpointer needed for diagram
-        return graph.get_graph().draw_mermaid()
-    except Exception as exc:
-        # Fallback static diagram if generation fails
+        return compile_graph().get_graph().draw_mermaid()
+    except Exception:
         return _FALLBACK_MERMAID
 
 
-# ─── Fallback Mermaid diagram (static) ───────────────────────────────────────
+# ─── Fallback diagram ─────────────────────────────────────────────────────────
 _FALLBACK_MERMAID = """
 graph TD
     START([▶ START]) --> router
     router -->|resume| resume_builder
     router -->|jobs| job_search
-    router -->|interview prep| interview_prep
-    router -->|mock interview| mock_interview
+    router -->|prep| interview_prep
+    router -->|mock| mock_interview
     router -->|evaluate| evaluation
-    router -->|tutorials| tutorials
+    router -->|learn| tutorials
     router -->|general| general_qa
     router -->|unclear| clarifier
+    router -->|salary| salary_negotiator
     resume_builder --> END([⏹ END])
     job_search --> END
     interview_prep --> END
@@ -171,16 +156,9 @@ graph TD
     tutorials --> END
     general_qa --> END
     clarifier --> END
+    salary_negotiator --> END
 
     style START fill:#4ade80,color:#000
     style END fill:#f87171,color:#000
     style router fill:#818cf8,color:#fff
-    style resume_builder fill:#38bdf8,color:#000
-    style job_search fill:#38bdf8,color:#000
-    style interview_prep fill:#38bdf8,color:#000
-    style mock_interview fill:#38bdf8,color:#000
-    style evaluation fill:#38bdf8,color:#000
-    style tutorials fill:#38bdf8,color:#000
-    style general_qa fill:#38bdf8,color:#000
-    style clarifier fill:#fb923c,color:#000
 """
