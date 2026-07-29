@@ -2,7 +2,7 @@ import os
 import uuid
 import logging
 from typing import Any, List, Dict, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -17,9 +17,9 @@ from src.graph.checkpointer import get_checkpointer
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 # Import direct specialist nodes
-from src.graph.nodes.resume_builder_node import resume_builder_node
-from src.graph.nodes.salary_negotiator_node import salary_negotiator_node
-from src.graph.nodes.evaluation_node import evaluation_node
+from src.agents.resume.node import resume_builder_node
+from src.agents.salary.node import salary_negotiator_node
+from src.agents.interview.eval_node import evaluation_node
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -129,6 +129,9 @@ class GenerateResumeRequest(BaseModel):
     job_description: str
     user_details: str
 
+class CompileRequest(BaseModel):
+    latex: str
+
 class RefineResumeRequest(BaseModel):
     previous_resume: str
     refinement_request: str
@@ -198,6 +201,224 @@ class SettingsUpdate(BaseModel):
 def health_check():
     return {"status": "ok", "graph_initialized": graph is not None}
 
+# ── UNIFIED ADAPTERS (used by the new React UI) ──────────────────────────────
+
+class UnifiedResumeRequest(BaseModel):
+    job_description: str
+    user_details: str
+    thread_id: Optional[str] = None
+
+class UnifiedRefineRequest(BaseModel):
+    refinement_request: str
+    previous_resume: Optional[str] = ""
+    job_description: Optional[str] = ""
+    thread_id: Optional[str] = None
+
+class UnifiedJobSearchRequest(BaseModel):
+    job_title: str
+    location: Optional[str] = ""
+    job_type: Optional[str] = "Full-time"
+    additional_context: Optional[str] = ""
+    thread_id: Optional[str] = "job-thread"
+
+class UnifiedInterviewPrepRequest(BaseModel):
+    job_title: str
+    experience_level: Optional[str] = ""
+    focus_areas: Optional[str] = ""
+    thread_id: Optional[str] = "prep-thread"
+
+class UnifiedMockInterviewRequest(BaseModel):
+    job_title: str
+    experience_level: Optional[str] = ""
+    interview_history: Optional[List[Dict[str, str]]] = None
+    thread_id: Optional[str] = "mock-thread"
+
+class UnifiedEvaluateRequest(BaseModel):
+    transcript: str
+    job_title: Optional[str] = ""
+    thread_id: Optional[str] = "eval-thread"
+
+class UnifiedTutorialRequest(BaseModel):
+    tutorial_query: str
+    user_context: Optional[str] = ""
+    thread_id: Optional[str] = "tutorial-thread"
+
+class UnifiedSalaryRequest(BaseModel):
+    message: str
+    thread_id: Optional[str] = "salary-thread"
+
+
+@app.post("/api/resume")
+def unified_generate_resume(req: UnifiedResumeRequest):
+    """New UI endpoint: generate a resume."""
+    try:
+        res = run_agent_graph(
+            user_text=f"Generate a LaTeX resume for: {req.job_description[:100]}",
+            extra_task={
+                "job_description": req.job_description,
+                "user_details": req.user_details,
+                "previous_resume": "",
+                "force_agent": "resume_builder"
+            },
+            thread_id=req.thread_id or str(uuid.uuid4())
+        )
+        output = res.get("agent_output", "")
+        return {"response": output, "agent_output": output, "graph_trace": res.get("graph_trace", [])}
+    except Exception as e:
+        logger.exception("Error generating resume")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/resume/refine")
+def unified_refine_resume(req: UnifiedRefineRequest):
+    """New UI endpoint: refine an existing resume."""
+    try:
+        res = run_agent_graph(
+            user_text=req.refinement_request,
+            extra_task={
+                "previous_resume": req.previous_resume,
+                "job_description": req.job_description,
+                "user_request": req.refinement_request,
+                "force_agent": "resume_builder"
+            },
+            thread_id=req.thread_id or str(uuid.uuid4())
+        )
+        output = res.get("agent_output", "")
+        return {"response": output, "agent_output": output, "graph_trace": res.get("graph_trace", [])}
+    except Exception as e:
+        logger.exception("Error refining resume")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/job_search")
+def unified_job_search(req: UnifiedJobSearchRequest):
+    """New UI endpoint: search for jobs."""
+    try:
+        query = f"Find {req.job_type} {req.job_title} jobs in {req.location or 'any location'}"
+        if req.additional_context:
+            query += f". Requirements: {req.additional_context}"
+        res = run_agent_graph(
+            user_text=query,
+            extra_task={
+                "job_title": req.job_title,
+                "location": req.location,
+                "job_type": req.job_type,
+                "user_context": req.additional_context,
+                "force_agent": "job_search"
+            },
+            thread_id=req.thread_id
+        )
+        output = res.get("agent_output", "")
+        return {"response": output, "agent_output": output, "graph_trace": res.get("graph_trace", [])}
+    except Exception as e:
+        logger.exception("Error searching jobs")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/interview_prep")
+def unified_interview_prep(req: UnifiedInterviewPrepRequest):
+    """New UI endpoint: get interview prep guide."""
+    try:
+        res = run_agent_graph(
+            user_text=req.focus_areas or f"Comprehensive interview preparation guide for {req.job_title}",
+            extra_task={
+                "job_title": req.job_title,
+                "user_experience": req.experience_level,
+                "user_request": req.focus_areas,
+                "force_agent": "interview_prep"
+            },
+            thread_id=req.thread_id
+        )
+        output = res.get("agent_output", "")
+        return {"response": output, "agent_output": output, "graph_trace": res.get("graph_trace", [])}
+    except Exception as e:
+        logger.exception("Error generating interview prep")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mock_interview")
+def unified_mock_interview(req: UnifiedMockInterviewRequest):
+    """New UI endpoint: conduct mock interview turn."""
+    try:
+        history = req.interview_history or []
+        user_text = "Start the mock interview" if not history else history[-1].get("content", "")
+        res = run_agent_graph(
+            user_text=user_text,
+            extra_task={
+                "job_title": req.job_title,
+                "user_experience": req.experience_level,
+                "force_agent": "mock_interview"
+            },
+            thread_id=req.thread_id,
+            interview_history=history,
+            interview_mode="mock"
+        )
+        output = res.get("agent_output", "")
+        return {"response": output, "agent_output": output, "graph_trace": res.get("graph_trace", [])}
+    except Exception as e:
+        logger.exception("Error in mock interview")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/evaluate")
+def unified_evaluate(req: UnifiedEvaluateRequest):
+    """New UI endpoint: evaluate an interview transcript."""
+    try:
+        eval_state = make_initial_state()
+        eval_state["task_input"] = {
+            "job_title": req.job_title,
+            "interview_transcript": req.transcript
+        }
+        from src.agents.interview.eval_node import evaluation_node
+        res = evaluation_node(eval_state)
+        output = res.get("agent_output", "No evaluation available.")
+        return {"response": output, "agent_output": output, "graph_trace": res.get("graph_trace", [])}
+    except Exception as e:
+        logger.exception("Error evaluating transcript")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/tutorials")
+def unified_tutorials(req: UnifiedTutorialRequest):
+    """New UI endpoint: generate a tutorial."""
+    try:
+        res = run_agent_graph(
+            user_text=req.tutorial_query,
+            extra_task={
+                "tutorial_query": req.tutorial_query,
+                "user_context": req.user_context,
+                "force_agent": "tutorials"
+            },
+            thread_id=req.thread_id
+        )
+        output = res.get("agent_output", "")
+        return {"response": output, "agent_output": output, "graph_trace": res.get("graph_trace", [])}
+    except Exception as e:
+        logger.exception("Error generating tutorial")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/salary")
+def unified_salary(req: UnifiedSalaryRequest):
+    """New UI endpoint: get salary negotiation advice."""
+    try:
+        res = run_agent_graph(
+            user_text=req.message,
+            extra_task={
+                "user_message": req.message,
+                "force_agent": "salary_negotiator"
+            },
+            thread_id=req.thread_id
+        )
+        output = res.get("agent_output", "")
+        return {"response": output, "agent_output": output, "graph_trace": res.get("graph_trace", [])}
+    except Exception as e:
+        logger.exception("Error getting salary advice")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Also patch /api/chat to always return "response" field
+
+
 @app.post("/api/chat")
 def chat_turn(req: ChatRequest):
     try:
@@ -208,10 +429,13 @@ def chat_turn(req: ChatRequest):
             interview_history=req.interview_history,
             interview_mode=req.interview_mode
         )
+        # Add `response` as alias for agent_output for new UI compatibility
+        res["response"] = res.get("agent_output", "")
         return res
     except Exception as e:
         logger.exception("Error in chat turn")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/resume/generate")
 def generate_resume(req: GenerateResumeRequest):
@@ -222,7 +446,8 @@ def generate_resume(req: GenerateResumeRequest):
             extra_task={
                 "job_description": req.job_description,
                 "user_details": req.user_details,
-                "previous_resume": ""
+                "previous_resume": "",
+                "force_agent": "resume_builder"
             },
             thread_id=str(uuid.uuid4())
         )
@@ -242,7 +467,8 @@ def refine_resume(req: RefineResumeRequest):
             extra_task={
                 "previous_resume": req.previous_resume,
                 "job_description": req.job_description,
-                "user_request": req.refinement_request
+                "user_request": req.refinement_request,
+                "force_agent": "resume_builder"
             },
             thread_id=str(uuid.uuid4())
         )
@@ -251,6 +477,36 @@ def refine_resume(req: RefineResumeRequest):
         return {"latex": latex, "graph_trace": res.get("graph_trace")}
     except Exception as e:
         logger.exception("Error refining resume")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/resume/compile")
+def compile_resume_pdf(req: CompileRequest):
+    try:
+        import urllib.parse
+        import requests
+        
+        latex_code = req.latex.strip()
+        if not latex_code:
+            raise HTTPException(status_code=400, detail="No LaTeX content provided.")
+            
+        encoded = urllib.parse.quote(latex_code)
+        url = f"https://latexonline.cc/compile?text={encoded}"
+        
+        logger.info("Sending LaTeX compile request to latexonline.cc")
+        res = requests.get(url, timeout=30)
+        
+        if res.status_code == 200:
+            return Response(content=res.content, media_type="application/pdf")
+        else:
+            err_log = res.text[:1000]
+            logger.error(f"LaTeX compile failed: {err_log}")
+            raise HTTPException(status_code=500, detail=f"LaTeX compilation failed:\n{err_log}")
+            
+    except requests.exceptions.Timeout:
+        logger.error("LaTeX compilation timed out.")
+        raise HTTPException(status_code=504, detail="LaTeX compilation server timed out. Please try again.")
+    except Exception as e:
+        logger.exception("Error in compile_resume_pdf")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/job/search")
@@ -262,7 +518,8 @@ def find_jobs(req: JobSearchRequest):
                 "job_title": req.job_title,
                 "location": req.location,
                 "job_type": req.job_type,
-                "user_context": req.user_context
+                "user_context": req.user_context,
+                "force_agent": "job_search"
             },
             thread_id=req.thread_id
         )
@@ -280,7 +537,8 @@ def build_prep_guide(req: PrepGuideRequest):
                 "job_title": req.job_title,
                 "user_experience": req.user_experience,
                 "user_name": req.user_name,
-                "user_request": req.focus_area
+                "user_request": req.focus_area,
+                "force_agent": "interview_prep"
             },
             thread_id=req.thread_id
         )
@@ -297,7 +555,8 @@ def start_mock(req: MockStartRequest):
             extra_task={
                 "job_title": req.job_title,
                 "user_experience": req.user_experience,
-                "user_name": req.user_name
+                "user_name": req.user_name,
+                "force_agent": "mock_interview"
             },
             thread_id=req.thread_id,
             interview_mode="mock"
@@ -315,7 +574,8 @@ def send_answer(req: MockAnswerRequest):
             extra_task={
                 "job_title": req.job_title,
                 "user_experience": req.user_experience,
-                "user_name": req.user_name
+                "user_name": req.user_name,
+                "force_agent": "mock_interview"
             },
             thread_id=req.thread_id,
             interview_history=req.history,
@@ -368,7 +628,8 @@ def learn_topic(req: TutorialRequest):
             user_text=req.topic,
             extra_task={
                 "user_message": req.topic,
-                "user_context": req.user_background
+                "user_context": req.user_background,
+                "force_agent": "tutorials"
             },
             thread_id=req.thread_id
         )
