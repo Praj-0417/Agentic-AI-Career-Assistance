@@ -13,6 +13,7 @@ from langchain_core.messages import AIMessage
 from src.state import AgentState
 from src.config import NODE_EVALUATION
 from src.core.llm import get_llm
+from src.middleware.guardrails import guarded_node
 from .prompts import EVALUATION_TEMPLATE
 
 
@@ -35,6 +36,7 @@ def _format_history(history: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
+@guarded_node("evaluation", output_validator="markdown")
 def evaluation_node(state: AgentState) -> dict:
     """
     Reads:

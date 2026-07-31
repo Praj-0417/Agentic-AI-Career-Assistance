@@ -16,6 +16,7 @@ from src.state import AgentState
 from src.config import NODE_JOB_SEARCH
 from src.core.llm import get_llm
 from src.core.search import get_search_tool
+from src.middleware.guardrails import guarded_node
 from .prompts import JOB_SEARCH_TEMPLATE
 
 
@@ -25,6 +26,7 @@ _prompt = PromptTemplate(
 )
 
 
+@guarded_node("job_search", output_validator="markdown")
 def job_search_node(state: AgentState) -> dict:
     """
     Reads:

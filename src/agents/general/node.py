@@ -18,6 +18,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from src.state import AgentState
 from src.config import NODE_GENERAL_QA, NODE_CLARIFIER
 from src.core.llm import get_llm
+from src.middleware.guardrails import guarded_node
 from .prompts import GENERAL_QA_TEMPLATE, CLARIFIER_TEMPLATE
 
 
@@ -60,6 +61,7 @@ def _build_chat_history(state: AgentState) -> str:
 
 # ── Node functions ─────────────────────────────────────────────────────────
 
+@guarded_node("general_qa", output_validator="any")
 def general_qa_node(state: AgentState) -> dict:
     """
     Friendly general-purpose career Q&A fallback.
@@ -95,6 +97,7 @@ def general_qa_node(state: AgentState) -> dict:
         }
 
 
+@guarded_node("clarifier", output_validator="any")
 def clarifier_node(state: AgentState) -> dict:
     """
     Asks a single targeted clarifying question when intent is UNCLEAR.

@@ -20,6 +20,7 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from src.agents.resume.node import resume_builder_node
 from src.agents.salary.node import salary_negotiator_node
 from src.agents.interview.eval_node import evaluation_node
+from src.core.metrics import registry
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -200,6 +201,10 @@ class SettingsUpdate(BaseModel):
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "graph_initialized": graph is not None}
+
+@app.get("/api/metrics")
+def get_metrics():
+    return registry.snapshot()
 
 # ── UNIFIED ADAPTERS (used by the new React UI) ──────────────────────────────
 

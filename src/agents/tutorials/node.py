@@ -20,6 +20,7 @@ from src.state import AgentState
 from src.config import NODE_TUTORIALS
 from src.core.llm import get_llm
 from src.core.search import get_search_tool
+from src.middleware.guardrails import guarded_node
 from .prompts import TUTORIAL_TEMPLATE
 
 
@@ -29,6 +30,7 @@ _prompt = PromptTemplate(
 )
 
 
+@guarded_node("tutorials", output_validator="markdown")
 def tutorials_node(state: AgentState) -> dict:
     """
     Reads (ONLY these keys — no resume bleed):

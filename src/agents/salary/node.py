@@ -16,6 +16,7 @@ from src.state import AgentState
 from src.config import NODE_SALARY
 from src.core.llm import get_llm
 from src.core.search import get_search_tool
+from src.middleware.guardrails import guarded_node
 from .prompts import SALARY_TEMPLATE
 
 
@@ -29,6 +30,7 @@ _prompt = PromptTemplate(
 )
 
 
+@guarded_node("salary_negotiator", output_validator="markdown")
 def salary_negotiator_node(state: AgentState) -> dict:
     """
     Reads:

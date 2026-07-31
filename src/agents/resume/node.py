@@ -20,6 +20,7 @@ from langchain_core.messages import AIMessage
 from src.state import AgentState
 from src.config import NODE_RESUME
 from src.core.llm import get_llm
+from src.middleware.guardrails import guarded_node
 from .prompts import GENERATION_TEMPLATE, REFINEMENT_TEMPLATE
 
 
@@ -49,6 +50,7 @@ def _strip_fences(code: str) -> str:
 
 # ── Node function ──────────────────────────────────────────────────────────
 
+@guarded_node("resume_builder", output_validator="latex")
 def resume_builder_node(state: AgentState) -> dict:
     """
     Reads:

@@ -15,6 +15,7 @@ from langchain_core.messages import AIMessage
 from src.state import AgentState
 from src.config import NODE_MOCK_INTERVIEW
 from src.core.llm import get_llm
+from src.middleware.guardrails import guarded_node
 from .prompts import MOCK_TEMPLATE
 
 
@@ -72,6 +73,7 @@ def _enforce_single_question(text: str) -> str:
 
 # ── Node function ──────────────────────────────────────────────────────────
 
+@guarded_node("mock_interview", output_validator="any")
 def mock_interview_node(state: AgentState) -> dict:
     """
     Reads:

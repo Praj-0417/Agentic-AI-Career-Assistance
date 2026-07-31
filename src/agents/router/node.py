@@ -21,6 +21,7 @@ from src.config import (
     NODE_CLARIFIER, NODE_SALARY,
 )
 from src.core.llm import get_llm
+from src.middleware.guardrails import guarded_node
 from .prompts import ROUTING_TEMPLATE
 
 
@@ -45,6 +46,7 @@ _routing_prompt = PromptTemplate(
 
 # ── Node function ──────────────────────────────────────────────────────────────
 
+@guarded_node("router", output_validator="any")
 def router_node(state: AgentState) -> dict:
     """
     1. Check for `force_agent` override — skip LLM if set.

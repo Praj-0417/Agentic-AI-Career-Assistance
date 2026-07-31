@@ -13,6 +13,7 @@ from src.state import AgentState
 from src.config import NODE_INTERVIEW_PREP
 from src.core.llm import get_llm
 from src.core.search import get_search_tool
+from src.middleware.guardrails import guarded_node
 from .prompts import PREP_TEMPLATE
 
 
@@ -22,6 +23,7 @@ _prompt = PromptTemplate(
 )
 
 
+@guarded_node("interview_prep", output_validator="markdown")
 def interview_prep_node(state: AgentState) -> dict:
     """
     Reads: task_input.{job_title, user_experience, user_name, user_request}
